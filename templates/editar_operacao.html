@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Editar Operação{% endblock %}
+{% block content %}
+    <h2>Editar Operação</h2>
+    <form method="POST">
+        <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" value="{{ operacao.descricao }}" required></div>
+        <div class="form-group"><label for="natureza">Natureza:</label><select name="natureza" required><option value="Entrada" {% if operacao.natureza == 'Entrada' %}selected{% endif %}>Entrada</option><option value="Saida" {% if operacao.natureza == 'Saida' %}selected{% endif %}>Saída</option></select></div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="{{ url_for('operacoes') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}

@@ -1,0 +1,97 @@
+{% extends "base.html" %}
+
+{% block title %}Lançamento de Investimentos{% endblock %}
+
+{% block content %}
+    <h2>Lançamento de Investimentos</h2>
+
+    <form method="POST" action="{{ url_for('add_investimento') }}">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="data_investimento">Data da Operação:</label>
+                <input type="date" name="data_investimento" required>
+            </div>
+            <div class="form-group">
+                <label for="data_vencimento">Data de Vencimento (opcional):</label>
+                <input type="date" name="data_vencimento">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="ticker_id">Ticker:</label>
+                <select name="ticker_id" required>
+                    <option value="">-- Selecione --</option>
+                    {% for t in tickers %}<option value="{{ t.id }}">{{ t.descricao }} ({{ t.classe }})</option>{% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="operacao_id">Operação:</label>
+                <select name="operacao_id" required>
+                    <option value="">-- Selecione --</option>
+                    {% for o in operacoes %}<option value="{{ o.id }}">{{ o.descricao }} ({{ o.natureza }})</option>{% endfor %}
+                </select>
+            </div>
+             <div class="form-group">
+                <label for="moeda_id">Moeda:</label>
+                <select name="moeda_id" required>
+                    <option value="">-- Selecione --</option>
+                    {% for m in moedas %}<option value="{{ m.id }}">{{ m.codigo }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="quantidade">Quantidade:</label>
+                <input type="number" name="quantidade" step="any" min="0" required placeholder="Ex: 100">
+            </div>
+             <div class="form-group">
+                <label for="valor_total">Valor Total da Operação:</label>
+                <input type="number" name="valor_total" step="0.01" min="0" required placeholder="Ex: 1500.00">
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Adicionar Operação</button>
+    </form>
+
+    <h2 style="margin-top: 2rem;">Operações de Investimento Lançadas</h2>
+
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+    </div>
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+
+    <table style="font-size: 0.9em;">
+        <thead>
+            <tr>
+                <th style="width: 5%;"></th>
+                <th>Data</th>
+                <th>Vencimento</th>
+                <th>Ticker</th>
+                <th>Classe</th>
+                <th>Operação</th>
+                <th>Moeda</th>
+                <th>Quantidade</th>
+                <th>Valor Total</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inv in investimentos %}
+            <tr id="row-{{ inv.id }}">
+                <td><input type="radio" name="selecionado" value="{{ inv.id }}" onchange="itemSelecionado(this, 'investimentos')"></td>
+                <td>{{ inv.data_inv_formatada }}</td>
+                <td>{{ inv.data_venc_formatada or '---' }}</td>
+                <td>{{ inv.ticker_nome }}</td>
+                <td>{{ inv.ticker_classe }}</td>
+                <td>{{ inv.operacao_nome }}</td>
+                <td>{{ inv.moeda_codigo }}</td>
+                <td>{{ inv.quantidade }}</td>
+                <td style="color: {% if inv.operacao_natureza == 'Entrada' %}green{% else %}red{% endif %};">
+                    R$ {{ "%.2f"|format(inv.valor_total|abs) }}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9">Nenhuma operação de investimento lançada.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

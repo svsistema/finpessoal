@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}Cadastro de Moedas{% endblock %}
+{% block content %}
+    <h2>Cadastro de Moedas</h2>
+    <form method="POST">
+        <div class="form-group"><label for="codigo">Código (ex: BRL, USD):</label><input type="text" name="codigo" required maxlength="3" style="text-transform: uppercase;"></div>
+        <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" required></div>
+        <button type="submit" class="btn btn-primary">Adicionar Moeda</button>
+    </form>
+    <h2 style="margin-top: 2rem;">Moedas Cadastradas</h2>
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+    </div>
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+    <table><thead><tr><th style="width: 5%;"></th><th>Código</th><th>Descrição</th></tr></thead>
+        <tbody>
+            {% for m in moedas %}<tr id="row-{{ m.id }}"><td><input type="radio" name="selecionado" value="{{ m.id }}" onchange="itemSelecionado(this, 'moedas')"></td><td>{{ m.codigo }}</td><td>{{ m.descricao }}</td></tr>{% else %}<tr><td colspan="3">Nenhuma moeda cadastrada.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

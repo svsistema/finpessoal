@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Cadastro de Tickers{% endblock %}
+{% block content %}
+    <h2>Cadastro de Tickers</h2>
+    <form method="POST">
+        <div class="form-group"><label for="descricao">Ticker (Código):</label><input type="text" name="descricao" required autocomplete="off"></div>
+        <div class="form-group"><label for="classe">Classe (ex: Ação, FII, BDR):</label><input type="text" name="classe" required autocomplete="off"></div>
+        <div class="form-group"><label for="tipo">Tipo (ex: Renda Variável):</label><input type="text" name="tipo" required autocomplete="off"></div>
+        <button type="submit" class="btn btn-primary">Adicionar Ticker</button>
+    </form>
+    <h2 style="margin-top: 2rem;">Tickers Cadastrados</h2>
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+    </div>
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+    <table><thead><tr><th style="width: 5%;"></th><th>Ticker</th><th>Classe</th><th>Tipo</th></tr></thead>
+        <tbody>
+            {% for t in tickers %}<tr id="row-{{ t.id }}"><td><input type="radio" name="selecionado" value="{{ t.id }}" onchange="itemSelecionado(this, 'tickers')"></td><td>{{ t.descricao }}</td><td>{{ t.classe }}</td><td>{{ t.tipo }}</td></tr>{% else %}<tr><td colspan="4">Nenhum ticker cadastrado.</td></tr>{% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

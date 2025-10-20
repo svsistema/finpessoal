@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+
+{% block title %}Editar Instituição{% endblock %}
+
+{% block content %}
+    <h2>Editar Instituição</h2>
+
+    <form method="POST">
+        <div class="form-group">
+            <label for="descricao">Nome da Instituição:</label>
+            <input type="text" id="descricao" name="descricao" 
+                   value="{{ instituicao['descricao'] }}" required autocomplete="off">
+        </div>
+
+        <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+        <a href="{{ url_for('instituicoes') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}

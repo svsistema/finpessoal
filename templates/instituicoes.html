@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}Cadastro de Instituições{% endblock %}
+
+{% block content %}
+    <h2>Cadastro de Instituições Financeiras</h2>
+
+    <form method="POST" action="{{ url_for('instituicoes') }}">
+        <div class="form-group">
+            <label for="descricao">Nome da Instituição:</label>
+            <input type="text" id="descricao" name="descricao" required autocomplete="off">
+        </div>
+        <button type="submit" class="btn btn-primary">Adicionar</button>
+    </form>
+
+    <h2 style="margin-top: 2rem;">Instituições Cadastradas</h2>
+
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar Selecionado</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir Selecionado</button>
+    </div>
+
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza que deseja excluir o item selecionado?');"></form>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 5%;"></th> <th>Descrição</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for inst in instituicoes %}
+            <tr id="row-{{ inst['id'] }}">
+                <td>
+                    <input type="radio" name="selecionado" value="{{ inst['id'] }}" onchange="itemSelecionado(this)">
+                </td>
+                <td>{{ inst['descricao'] }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="2">Nenhuma instituição cadastrada.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        // Pega a referência dos botões de ação
+        const btnEditar = document.getElementById('btn-editar');
+        const btnExcluir = document.getElementById('btn-excluir');
+        const formExcluir = document.getElementById('form-excluir');
+
+        // Função que é chamada toda vez que um radio button é clicado
+        function itemSelecionado(radio) {
+            const id = radio.value;
+
+            // Habilita os botões
+            btnEditar.removeAttribute('disabled');
+            btnExcluir.removeAttribute('disabled');
+
+            // Atualiza o link do botão Editar
+            btnEditar.href = `/instituicoes/edit/${id}`;
+
+            // Atualiza a ação do formulário de Excluir
+            formExcluir.action = `/instituicoes/delete/${id}`;
+
+            // Lógica para destacar a linha selecionada
+            // Primeiro, remove o destaque de todas as outras linhas
+            document.querySelectorAll('tbody tr').forEach(row => {
+                row.style.backgroundColor = '';
+            });
+            // Depois, adiciona o destaque na linha do item clicado
+            document.getElementById(`row-${id}`).style.backgroundColor = '#e0f7fa'; // Um tom de ciano bem claro
+        }
+    </script>
+{% endblock %}

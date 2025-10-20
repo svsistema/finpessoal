@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+
+{% block title %}Editar Movimento{% endblock %}
+
+{% block content %}
+    <h2>Editar Movimento</h2>
+
+    <form method="POST">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="data_movimento">Data do Movimento:</label>
+                <input type="date" name="data_movimento" value="{{ movimento.data_movimento }}" required>
+            </div>
+            <div class="form-group">
+                <label for="data_efetivacao">Data de Efetivação (opcional):</label>
+                <input type="date" name="data_efetivacao" value="{{ movimento.data_efetivacao }}">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="descricao">Descrição:</label>
+            <input type="text" name="descricao" value="{{ movimento.descricao }}" required autocomplete="off">
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="categoria_id">Categoria:</label>
+                <select name="categoria_id" required>
+                    {% for cat in categorias %}
+                    <option value="{{ cat.id }}" {% if cat.id == movimento.categoria_id %}selected{% endif %}>
+                        {{ cat.descricao }} ({{ cat.tipo }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="instituicao_id">Conta / Banco:</label>
+                <select name="instituicao_id" required>
+                    {% for inst in instituicoes %}
+                    <option value="{{ inst.id }}" {% if inst.id == movimento.instituicao_id %}selected{% endif %}>
+                        {{ inst.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="cartao_id">Cartão de Crédito (opcional):</label>
+                <select name="cartao_id">
+                    <option value="">-- Nenhum --</option>
+                    {% for cartao in cartoes %}
+                    <option value="{{ cartao.id }}" {% if cartao.id == movimento.cartao_id %}selected{% endif %}>
+                        {{ cartao.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="valor">Valor (R$):</label>
+                <input type="number" name="valor" step="0.01" min="0" value="{{ movimento.valor|abs }}" required>
+            </div>
+             <div class="form-group">
+                <label for="status">Status:</label>
+                <select name="status" required>
+                    <option value="Pendente" {% if movimento.status == 'Pendente' %}selected{% endif %}>Pendente</option>
+                    <option value="Efetivado" {% if movimento.status == 'Efetivado' %}selected{% endif %}>Efetivado</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="compartilhado">Compartilhado:</label>
+                <select name="compartilhado" required>
+                    <option value="100% Silvia" {% if movimento.compartilhado == '100% Silvia' %}selected{% endif %}>100% Silvia</option>
+                    <option value="100% Nelson" {% if movimento.compartilhado == '100% Nelson' %}selected{% endif %}>100% Nelson</option>
+                    <option value="50/50" {% if movimento.compartilhado == '50/50' %}selected{% endif %}>50/50</option>
+                </select>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+        <a href="{{ url_for('movimentos') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}

@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block title %}Editar Moeda{% endblock %}
+{% block content %}
+    <h2>Editar Moeda</h2>
+    <form method="POST">
+        <div class="form-group"><label for="codigo">Código:</label><input type="text" name="codigo" value="{{ moeda.codigo }}" required maxlength="3" style="text-transform: uppercase;"></div>
+        <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" value="{{ moeda.descricao }}" required></div>
+        <button type="submit" class="btn btn-primary">Salvar</button>
+        <a href="{{ url_for('moedas') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}

@@ -1,0 +1,64 @@
+{% extends "base.html" %}
+
+{% block title %}Editar Operação de Investimento{% endblock %}
+
+{% block content %}
+    <h2>Editar Operação de Investimento</h2>
+
+    <form method="POST">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="data_investimento">Data da Operação:</label>
+                <input type="date" name="data_investimento" value="{{ investimento.data_investimento }}" required>
+            </div>
+            <div class="form-group">
+                <label for="data_vencimento">Data de Vencimento (opcional):</label>
+                <input type="date" name="data_vencimento" value="{{ investimento.data_vencimento }}">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="ticker_id">Ticker:</label>
+                <select name="ticker_id" required>
+                    {% for t in tickers %}
+                    <option value="{{ t.id }}" {% if t.id == investimento.ticker_id %}selected{% endif %}>
+                        {{ t.descricao }} ({{ t.classe }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="operacao_id">Operação:</label>
+                <select name="operacao_id" required>
+                    {% for o in operacoes %}
+                    <option value="{{ o.id }}" {% if o.id == investimento.operacao_id %}selected{% endif %}>
+                        {{ o.descricao }} ({{ o.natureza }})
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+             <div class="form-group">
+                <label for="moeda_id">Moeda:</label>
+                <select name="moeda_id" required>
+                    {% for m in moedas %}
+                    <option value="{{ m.id }}" {% if m.id == investimento.moeda_id %}selected{% endif %}>
+                        {{ m.codigo }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="quantidade">Quantidade:</label>
+                <input type="number" name="quantidade" step="any" min="0" value="{{ investimento.quantidade }}" required>
+            </div>
+             <div class="form-group">
+                <label for="valor_total">Valor Total da Operação:</label>
+                <input type="number" name="valor_total" step="0.01" min="0" value="{{ investimento.valor_total|abs }}" required>
+            </div>
+        </div>
+        <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+        <a href="{{ url_for('investimentos') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+{% endblock %}

@@ -1,0 +1,85 @@
+{% extends "base.html" %}
+
+{% block title %}Lançamento de Movimentos{% endblock %}
+
+{% block content %}
+    <h2>Lançamento de Movimentos</h2>
+
+    <form method="POST" action="{{ url_for('add_movimento') }}">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group"><label for="data_movimento">Data do Movimento:</label><input type="date" name="data_movimento" required></div>
+            <div class="form-group"><label for="data_efetivacao">Data de Efetivação (opcional):</label><input type="date" name="data_efetivacao"></div>
+        </div>
+        <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" required autocomplete="off"></div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group"><label for="categoria_id">Categoria:</label><select name="categoria_id" required><option value="">-- Selecione --</option>{% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.descricao }} ({{ cat.tipo }})</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="instituicao_id">Conta / Banco:</label><select name="instituicao_id" required><option value="">-- Selecione --</option>{% for inst in instituicoes %}<option value="{{ inst.id }}">{{ inst.descricao }}</option>{% endfor %}</select></div>
+            <div class="form-group"><label for="cartao_id">Cartão de Crédito (opcional):</label><select name="cartao_id"><option value="">-- Nenhum --</option>{% for cartao in cartoes %}<option value="{{ cartao.id }}">{{ cartao.descricao }}</option>{% endfor %}</select></div>
+        </div>
+         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group"><label for="valor">Valor (R$):</label><input type="number" name="valor" step="0.01" min="0" required placeholder="Use apenas números positivos"></div>
+             <div class="form-group"><label for="status">Status:</label><select name="status" required><option value="Pendente">Pendente</option><option value="Efetivado">Efetivado</option></select></div>
+            <div class="form-group"><label for="compartilhado">Compartilhado:</label><select name="compartilhado" required><option value="100% Silvia">100% Silvia</option><option value="100% Nelson">100% Nelson</option><option value="50/50">50/50</option></select></div>
+        </div>
+        <button type="submit" class="btn btn-primary">Adicionar Movimento</button>
+    </form>
+
+    <h2 style="margin-top: 2rem;">Movimentos Lançados</h2>
+
+    <form method="GET" action="{{ url_for('movimentos') }}" style="margin: 1.5rem 0; background-color: #f9f9f9; padding: 1rem; border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="data_inicio">Data Início:</label>
+                <input type="date" name="data_inicio" value="{{ data_inicio or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="data_fim">Data Fim:</label>
+                <input type="date" name="data_fim" value="{{ data_fim or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Filtrar</button>
+            <a href="{{ url_for('movimentos') }}" class="btn btn-secondary" style="text-align: center;">Limpar Filtro</a>
+        </div>
+    </form>
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+    </div>
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+
+    <table style="font-size: 0.9em;">
+        <thead>
+            <tr>
+                <th style="width: 5%;"></th>
+                <th>Data Mov.</th>
+                <th>Data Efet.</th>
+                <th>Descrição</th>
+                <th>Categoria</th>
+                <th>Conta</th>
+                <th>Cartão</th>
+                <th>Valor</th>
+                <th>Status</th>
+                <th>Compartilhado</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for mov in movimentos %}
+            <tr id="row-{{ mov.id }}">
+                <td><input type="radio" name="selecionado" value="{{ mov.id }}" onchange="itemSelecionado(this, 'movimentos')"></td>
+                <td>{{ mov.data_mov_formatada }}</td>
+                <td>{{ mov.data_efet_formatada or '---' }}</td>
+                <td>{{ mov.descricao }}</td>
+                <td>{{ mov.categoria_nome }}</td>
+                <td>{{ mov.instituicao_nome }}</td>
+                <td>{{ mov.cartao_nome or '---' }}</td>
+                <td style="color: {% if mov.categoria_tipo == 'Receita' %}green{% else %}red{% endif %};">
+                    R$ {{ "%.2f"|format(mov.valor|abs) }}
+                </td>
+                <td>{{ mov.status }}</td>
+                <td>{{ mov.compartilhado }}</td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10">Nenhum movimento encontrado para o período.</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+{% endblock %}

@@ -1,0 +1,91 @@
+{% extends "base.html" %}
+
+{% block title %}Cadastro de Cartões{% endblock %}
+
+{% block content %}
+    <h2>Cadastro de Cartões de Crédito</h2>
+
+    <form method="POST" action="{{ url_for('cartoes') }}">
+        <div class="form-group">
+            <label for="descricao">Descrição do Cartão (ex: Visa Platinum):</label>
+            <input type="text" id="descricao" name="descricao" required autocomplete="off">
+        </div>
+        <div class="form-group">
+            <label for="instituicao_id">Banco / Instituição:</label>
+            <select id="instituicao_id" name="instituicao_id" required>
+                <option value="">-- Selecione --</option>
+                {% for inst in instituicoes %}
+                <option value="{{ inst.id }}">{{ inst.descricao }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="form-group">
+            <label for="vencimento">Dia do Vencimento:</label>
+            <input type="number" id="vencimento" name="vencimento" min="1" max="31" required>
+        </div>
+        <div class="form-group">
+            <label for="limite">Limite do Cartão (R$):</label>
+            <input type="number" id="limite" name="limite" step="0.01" min="0" required placeholder="Ex: 5000.00">
+        </div>
+        <button type="submit" class="btn btn-primary">Adicionar Cartão</button>
+    </form>
+
+    <h2 style="margin-top: 2rem;">Cartões Cadastrados</h2>
+
+    <div class="action-buttons" style="margin-bottom: 1rem;">
+        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar Selecionado</a>
+        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir Selecionado</button>
+    </div>
+
+    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza que deseja excluir o cartão selecionado?');"></form>
+
+    <table>
+        <thead>
+            <tr>
+                <th style="width: 5%;"></th>
+                <th>Descrição</th>
+                <th>Instituição</th>
+                <th>Vencimento</th>
+                <th>Limite</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cartao in cartoes %}
+            <tr id="row-{{ cartao.id }}">
+                <td>
+                    <input type="radio" name="selecionado" value="{{ cartao.id }}" onchange="itemSelecionado(this)">
+                </td>
+                <td>{{ cartao.descricao }}</td>
+                <td>{{ cartao.instituicao_nome }}</td>
+                <td>Dia {{ cartao.vencimento }}</td>
+                <td>R$ {{ "%.2f"|format(cartao.limite) }}</td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5">Nenhum cartão cadastrado.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <script>
+        const btnEditar = document.getElementById('btn-editar');
+        const btnExcluir = document.getElementById('btn-excluir');
+        const formExcluir = document.getElementById('form-excluir');
+
+        function itemSelecionado(radio) {
+            const id = radio.value;
+            btnEditar.removeAttribute('disabled');
+            btnExcluir.removeAttribute('disabled');
+
+            // AQUI ESTÁ A CORREÇÃO:
+            btnEditar.href = `/cartoes/edit/${id}`; 
+            formExcluir.action = `/cartoes/delete/${id}`;
+
+            document.querySelectorAll('tbody tr').forEach(row => {
+                row.style.backgroundColor = '';
+            });
+            document.getElementById(`row-${id}`).style.backgroundColor = '#e0f7fa';
+        }
+    </script>
+{% endblock %}
