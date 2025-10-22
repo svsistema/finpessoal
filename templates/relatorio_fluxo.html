@@ -1,0 +1,168 @@
+{% extends "base.html" %}
+
+{% block title %}Relatório - Fluxo de Caixa{% endblock %}
+
+{% block content %}
+    <h2>Relatório - Fluxo de Caixa</h2>
+
+    <form method="GET" action="{{ url_for('relatorio_fluxo') }}" style="margin: 1.5rem 0; background-color: #f9f9f9; padding: 1rem; border-radius: 8px;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="data_inicio">Data Início:</label>
+                <input type="date" name="data_inicio" value="{{ data_inicio or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="data_fim">Data Fim:</label>
+                <input type="date" name="data_fim" value="{{ data_fim or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label for="compartilhado">Compartilhado:</label>
+                <select name="compartilhado">
+                    <option value="Todos" {% if filtro_compartilhado == 'Todos' %}selected{% endif %}>Todos</option>
+                    <option value="100% Silvia" {% if filtro_compartilhado == '100% Silvia' %}selected{% endif %}>100% Silvia</option>
+                    <option value="100% Nelson" {% if filtro_compartilhado == '100% Nelson' %}selected{% endif %}>100% Nelson</option>
+                    <option value="50/50" {% if filtro_compartilhado == '50/50' %}selected{% endif %}>50/50</option>
+                </select>
+            </div>
+            <button type="submit" class="btn btn-primary">Filtrar Relatório</button>
+        </div>
+    </form>
+
+    {% if tables %}
+    <table class="report-table table table-bordered table-hover table-sm" style="margin-top: 2rem;">
+        <thead>
+            <tr>
+                <th>Descrição</th>
+                {% for month in months %}
+                    <th>{{ month }}</th>
+                {% endfor %}
+                <th>Média</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr class="total-resultado">
+                <td><strong>Resultado</strong></td>
+                {% for month in months %}
+                    <td>{{ tables['Resultado'].get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ tables['Resultado'].get('Média', 'R$ 0,00') }}</td>
+            </tr>
+
+            <tr class="section-header">
+                <td><strong>Receitas</strong></td>
+                {% for month in months %}
+                    <td>{{ tables['Total_Receitas'].get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ tables['Total_Receitas'].get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% for receita in tables['Receitas'] %}
+            <tr>
+                <td class="category-indent">{{ receita.categoria }}</td>
+                {% for month in months %}
+                    <td>{{ receita.get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ receita.get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% endfor %}
+
+            <tr class="section-header">
+                <td><strong>Despesas</strong></td>
+                {% for month in months %}
+                    <td>{{ tables['Total_Despesas'].get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ tables['Total_Despesas'].get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% for despesa in tables['Despesas'] %}
+            <tr>
+                <td class="category-indent">{{ despesa.categoria }}</td>
+                {% for month in months %}
+                    <td>{{ despesa.get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ despesa.get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% endfor %}
+
+            <tr class="section-header">
+                <td><strong>Saldos por Banco</strong></td>
+                {% for month in months %}
+                    <td>{{ tables['Total_Saldos_Banco'].get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ tables['Total_Saldos_Banco'].get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% for banco in tables['Saldos_Banco'] %}
+            <tr>
+                <td class="category-indent">{{ banco.instituicao }}</td>
+                {% for month in months %}
+                    <td>{{ banco.get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ banco.get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% endfor %}
+
+            <tr class="section-header">
+                <td><strong>Gastos por Cartão</strong></td>
+                {% for month in months %}
+                     <td>{{ tables['Total_Gastos_Cartao'].get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ tables['Total_Gastos_Cartao'].get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% for cartao in tables['Gastos_Cartao'] %}
+            <tr>
+                <td class="category-indent">{{ cartao.cartao }}</td>
+                {% for month in months %}
+                    <td>{{ cartao.get(month, 'R$ 0,00') }}</td>
+                {% endfor %}
+                <td>{{ cartao.get('Média', 'R$ 0,00') }}</td>
+            </tr>
+            {% endfor %}
+
+        </tbody>
+    </table>
+    {% else %}
+         {% if request.args.get('data_inicio') %} {# Mostra mensagem apenas se já filtrou #}
+             <p>Nenhum movimento efetivado encontrado para os filtros selecionados.</p>
+         {% else %}
+             <p>Use os filtros acima para gerar o relatório.</p>
+         {% endif %}
+    {% endif %}
+
+    <style>
+        .report-table { overflow-x: auto; } /* Permite rolagem horizontal se a tabela for larga */
+        .report-table table {
+            font-size: 0.9em;
+            width: 100%;
+            border-collapse: collapse;
+            white-space: nowrap; /* Evita quebra de linha nas células */
+        }
+        .report-table th, .report-table td {
+            border: 1px solid #ddd;
+            padding: 6px 10px; /* Aumenta padding lateral */
+            text-align: right;
+        }
+        .report-table th:first-child, /* Descrição header */
+        .report-table td:first-child { /* Coluna de Descrição */
+            text-align: left;
+            min-width: 150px; /* Largura mínima para descrição */
+        }
+        .report-table thead th {
+            background-color: #ecf0f1;
+            color: #34495e;
+            position: sticky; top: 0; /* Cabeçalho fixo ao rolar */
+            z-index: 1;
+        }
+        .report-table tbody tr:hover { background-color: #f5f5f5; }
+
+        /* Estilos dos blocos */
+        .total-resultado td { background-color: #ddeeff; font-weight: bold; }
+        .section-header td { background-color: #f0f2f5; font-weight: bold; }
+
+        /* Recuo para categorias/bancos/cartões */
+        .category-indent { padding-left: 25px !important; }
+
+         /* Cores Receita/Despesa nos totais (aplicado no HTML com base na linha) */
+         .section-header:nth-of-type(1) td { color: green; } /* Receitas */
+         .section-header:nth-of-type(2) td { color: red; } /* Despesas */
+
+    </style>
+
+{% endblock %}

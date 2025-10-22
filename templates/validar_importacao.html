@@ -1,0 +1,174 @@
+{% extends "base.html" %}
+
+{% block title %}Validar Importação{% endblock %}
+
+{% block content %}
+    <h2>Importar Movimentos (Etapa 2 de 3): Validação</h2>
+    <p>Ficheiro: <strong>{{ filename }}</strong></p>
+
+    {% if has_errors %}
+        <div class="alert-error">
+            <strong>Atenção!</strong> Encontrámos erros no seu ficheiro.
+            Por favor, corrija os campos destacados em vermelho abaixo selecionando uma opção válida.
+        </div>
+    {% else %}
+        <div class="alert-success">
+            <strong>Sucesso!</strong> Todos os dados parecem corretos.
+            Revise os lançamentos e clique em "Salvar Importação" no final da página.
+        </div>
+    {% endif %}
+
+    <form action="{{ url_for('salvar_importacao') }}" method="POST">
+
+        <input type="hidden" name="total_rows" value="{{ dados|length }}">
+
+        <table style="font-size: 0.9em;">
+            <thead>
+                <tr>
+                    <th>Data</th>
+                    <th>Descrição</th>
+                    <th>Categoria</th>
+                    <th>Conta</th>
+                    <th>Cartão</th>
+                    <th>Valor (R$)</th>
+                    <th>Status</th>
+                    <th>Compartilhado</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in dados %}
+                <tr style="{% if row.erros %}background-color: #f8d7da; border: 2px solid red;{% endif %}">
+
+                    <td>
+                        <input type="hidden" name="data_{{ loop.index }}" value="{{ row.data.split(' ')[0] }}">
+                        {{ row.data.split(' ')[0] }}
+                    </td>
+
+                    <td>
+                        <input type="hidden" name="descricao_{{ loop.index }}" value="{{ row.descricao }}">
+                        {{ row.descricao }}
+                    </td>
+
+                    <td>
+                        {% if row.categoria_id %}
+                            <input type="hidden" name="categoria_id_{{ loop.index }}" value="{{ row.categoria_id }}">
+                            {{ row.categoria_nome }}
+                        {% else %}
+                            <div style="color: red; font-weight: bold;">Inválido: '{{ row.categoria_nome_invalido }}'</div>
+                            <select name="categoria_id_{{ loop.index }}" required class="form-control" onchange="verificarErros()">
+                                <option value="">-- Corrija aqui --</option>
+                                {% for cat in categorias_list %}
+                                    <option value="{{ cat.id }}">{{ cat.descricao }} ({{ cat.tipo }})</option>
+                                {% endfor %}
+                            </select>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        {% if row.instituicao_id %}
+                            <input type="hidden" name="instituicao_id_{{ loop.index }}" value="{{ row.instituicao_id }}">
+                            {{ row.conta_nome }}
+                        {% else %}
+                            <div style="color: red; font-weight: bold;">Inválido: '{{ row.conta_nome_invalido }}'</div>
+                            <select name="instituicao_id_{{ loop.index }}" required class="form-control" onchange="verificarErros()">
+                                <option value="">-- Corrija aqui --</option>
+                                {% for inst in instituicoes_list %}
+                                    <option value="{{ inst.id }}">{{ inst.descricao }}</option>
+                                {% endfor %}
+                            </select>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        {% if row.cartao_id %}
+                            <input type="hidden" name="cartao_id_{{ loop.index }}" value="{{ row.cartao_id }}">
+                            {{ row.cartao_nome }}
+                        {% elif not row.cartao_nome_raw %}
+                            <input type="hidden" name="cartao_id_{{ loop.index }}" value="">
+                            ---
+                        {% else %}
+                            <div style="color: red; font-weight: bold;">Inválido: '{{ row.cartao_nome_invalido }}'</div>
+                            <select name="cartao_id_{{ loop.index }}" class="form-control">
+                                <option value="">-- Corrija (ou deixe em branco) --</option>
+                                {% for cartao in cartoes_list %}
+                                    <option value="{{ cartao.id }}">{{ cartao.descricao }}</option>
+                                {% endfor %}
+                            </select>
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        <input type="hidden" name="valor_{{ loop.index }}" value="{{ row.valor }}">
+                        R$ {{ "%.2f"|format(row.valor|float) }}
+                    </td>
+
+                    <td>
+                        {% if row.status_invalido %}
+                            <div style="color: red; font-weight: bold;">Inválido: '{{ row.status_invalido }}'</div>
+                            <select name="status_{{ loop.index }}" required onchange="verificarErros()">
+                                <option value="">-- Corrija --</option>
+                                <option value="Pendente">Pendente</option>
+                                <option value="Efetivado">Efetivado</option>
+                            </select>
+                        {% else %}
+                            <input type="hidden" name="status_{{ loop.index }}" value="{{ row.status }}">
+                            {{ row.status }}
+                        {% endif %}
+                    </td>
+
+                    <td>
+                        {% if row.compartilhado_invalido %}
+                            <div style="color: red; font-weight: bold;">Inválido: '{{ row.compartilhado_invalido }}'</div>
+                            <select name="compartilhado_{{ loop.index }}" required onchange="verificarErros()">
+                                <option value="">-- Corrija --</option>
+                                <option value="100% Silvia">100% Silvia</option>
+                                <option value="100% Nelson">100% Nelson</option>
+                                <option value="50/50">50/50</option>
+                            </select>
+                        {% else %}
+                            <input type="hidden" name="compartilhado_{{ loop.index }}" value="{{ row.compartilhado }}">
+                            {{ row.compartilhado }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+
+        <div style="margin-top: 2rem; text-align: right;">
+            <a href="{{ url_for('importar') }}" class="btn btn-secondary">Cancelar Importação</a>
+            <button type="submit" class="btn btn-primary" {% if has_errors %}disabled{% endif %} id="btn-salvar">
+                Salvar Importação
+            </button>
+        </div>
+    </form>
+
+    <script>
+        // Adicionámos 'onchange="verificarErros()"' nos 'select'
+        // para que esta função seja chamada e re-valide o botão.
+        const btnSalvar = document.getElementById('btn-salvar');
+
+        function verificarErros() {
+            if (!btnSalvar) return;
+
+            const selectsDeCorrecao = document.querySelectorAll('select[required]');
+            let todosCorrigidos = true;
+
+            selectsDeCorrecao.forEach(select => {
+                if (select.value === "") {
+                    todosCorrigidos = false;
+                }
+            });
+
+            if (todosCorrigidos) {
+                btnSalvar.removeAttribute('disabled');
+            } else {
+                btnSalvar.setAttribute('disabled', 'true');
+            }
+        }
+
+        // Verifica o estado inicial assim que a página carrega
+        document.addEventListener('DOMContentLoaded', verificarErros);
+    </script>
+
+{% endblock %}

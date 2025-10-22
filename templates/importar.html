@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+
+{% block title %}Importar Movimentos{% endblock %}
+
+{% block content %}
+    <h2>Importar Movimentos (Etapa 1 de 3)</h2>
+
+    <p>Envie um ficheiro CSV ou Excel (XLSX/XLS) para importação. O ficheiro deve seguir o modelo esperado.</p>
+
+    <form method="POST" enctype="multipart/form-data" action="{{ url_for('importar') }}"> {# Garante que a ação aponta para o lugar certo #}
+        <div class="form-group">
+            <label for="arquivo">Selecione o ficheiro:</label>
+            <input type="file" name="arquivo" id="arquivo" accept=".csv, application/vnd.openxmlformats-officedocument.spreadsheetml.sheet, application/vnd.ms-excel" required> {# Aceita os MIME types corretos #}
+        </div>
+
+        <button type="submit" class="btn btn-primary">Enviar Ficheiro para Validação</button>
+    </form>
+
+    <hr style="margin: 2rem 0;">
+
+    <h3>Modelo do Ficheiro de Importação (Movimentos)</h3>
+    <p>O seu ficheiro (CSV ou Excel) deve ter as seguintes colunas, exatamente nesta ordem e com estes nomes na primeira linha:</p>
+    <ul style="font-family: monospace; background-color: #f4f4f4; padding: 1rem; border-radius: 4px;">
+        <li>Data (Formato: AAAA-MM-DD)</li>
+        <li>Descricao (Texto)</li>
+        <li>Categoria (O nome exato como está no cadastro)</li>
+        <li>Conta (O nome exato da Instituição/Banco)</li>
+        <li>Cartao (Opcional - O nome exato do cartão. Deixe em branco se não aplicável)</li>
+        <li>Valor (Número positivo, ex: 50.25 ou 50,25 - o sistema tratará a vírgula)</li>
+        <li>Status (Texto: 'Pendente' ou 'Efetivado')</li>
+        <li>Compartilhado (Texto: '100% Silvia', '100% Nelson' ou '50/50')</li>
+    </ul>
+    <p><strong>Atenção:</strong> Para CSV, use ponto e vírgula (;) como separador.</p>
+
+{% endblock %}
