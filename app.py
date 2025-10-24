@@ -4,12 +4,30 @@ import pandas as pd
 import os
 from werkzeug.utils import secure_filename
 import math
-from datetime import datetime
-import io # Para formatar numeros no pandas to_html
+from datetime import datetime, date # Adicionado 'date' para a data padrão
+import io
+
+# --- Função para formatar como moeda BRL (MOVIDA PARA CIMA) ---
+def format_brl(value):
+    if pd.isna(value) or value == 0:
+         # Retorna 'R$ 0,00' explicitamente para evitar 'R$ -0,00'
+         return "R$ 0,00"
+    # Garante que seja float antes de formatar
+    try:
+         float_value = float(value)
+         # Trata especificamente -0.0
+         if float_value == 0.0 and math.copysign(1.0, float_value) == -1.0:
+             return "R$ 0,00"
+         return f"R$ {float_value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except (ValueError, TypeError):
+         return "Valor Inválido"
 
 app = Flask(__name__)
 app.secret_key = 'sua_chave_secreta_aqui_pode_ser_qualquer_coisa'
 DATABASE = 'financas.db'
+
+# --- Registra a função no Jinja AGORA que ela está definida ---
+app.jinja_env.globals.update(format_brl=format_brl)
 
 UPLOAD_FOLDER = 'uploads'
 if not os.path.exists(UPLOAD_FOLDER):
@@ -22,16 +40,10 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
 def get_db_connection():
-    # Adicionado detect_types para facilitar conversão de data
     conn = sqlite3.connect(DATABASE, detect_types=sqlite3.PARSE_DECLTYPES | sqlite3.PARSE_COLNAMES)
     conn.execute("PRAGMA journal_mode=WAL")
     conn.row_factory = sqlite3.Row
     return conn
-
-def format_brl(value):
-    if pd.isna(value) or value == 0:
-         return "R$ 0,00"
-    return f"R$ {value:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
 
 @app.route('/')
 def index(): return redirect(url_for('movimentos'))
@@ -315,14 +327,9 @@ def movimentos():
         LEFT JOIN cartoes_credito cc ON m.cartao_id = cc.id'''
     params = []
     where_clauses = []
-    if data_inicio:
-        where_clauses.append("m.data_movimento >= ?")
-        params.append(data_inicio)
-    if data_fim:
-        where_clauses.append("m.data_movimento <= ?")
-        params.append(data_fim)
-    if where_clauses:
-        base_query += " WHERE " + " AND ".join(where_clauses)
+    if data_inicio: where_clauses.append("m.data_movimento >= ?"); params.append(data_inicio)
+    if data_fim: where_clauses.append("m.data_movimento <= ?"); params.append(data_fim)
+    if where_clauses: base_query += " WHERE " + " AND ".join(where_clauses)
     base_query += " ORDER BY m.data_movimento DESC, m.id DESC"
     movimentos_list = conn.execute(base_query, params).fetchall()
 
@@ -348,23 +355,14 @@ def add_movimento():
     compartilhado = request.form.get('compartilhado')
 
     if not all([data_movimento, descricao, categoria_id, instituicao_id, valor_str, status, compartilhado]):
-         flash('Todos os campos marcados são obrigatórios (exceto Data Efetivação e Cartão).', 'error')
-         return redirect(url_for('movimentos'))
-    try:
-         valor = float(valor_str)
-    except ValueError:
-         flash('Valor inválido.', 'error')
-         return redirect(url_for('movimentos'))
+         flash('Todos os campos marcados são obrigatórios.', 'error'); return redirect(url_for('movimentos'))
+    try: valor = float(valor_str)
+    except ValueError: flash('Valor inválido.', 'error'); return redirect(url_for('movimentos'))
 
     categoria_tipo = conn.execute('SELECT tipo FROM categorias WHERE id = ?', (categoria_id,)).fetchone()['tipo']
     valor_final = abs(valor)
-    if categoria_tipo == 'Despesa':
-        valor_final = -valor_final
-
-    # Regra de negócio: Se status for Efetivado e não houver data de efetivação, usar data do movimento
-    if status == 'Efetivado' and not data_efetivacao:
-        data_efetivacao = data_movimento
-
+    if categoria_tipo == 'Despesa': valor_final = -valor_final
+    if status == 'Efetivado' and not data_efetivacao: data_efetivacao = data_movimento
 
     conn.execute('INSERT INTO movimentos (data_movimento, data_efetivacao, descricao, categoria_id, instituicao_id, cartao_id, valor, status, compartilhado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
                  (data_movimento, data_efetivacao, descricao, categoria_id, instituicao_id, cartao_id, valor_final, status, compartilhado))
@@ -375,6 +373,17 @@ def add_movimento():
 @app.route('/movimentos/edit/<int:id>', methods=['GET', 'POST'])
 def edit_movimento(id):
     conn = get_db_connection()
+    # Função interna para recarregar dados da página de edição em caso de erro no POST
+    def reload_edit_page():
+        movimento_reload = conn.execute('SELECT * FROM movimentos WHERE id = ?', (id,)).fetchone()
+        # Verifica se movimento existe antes de buscar o resto
+        if not movimento_reload: return redirect(url_for('movimentos'))
+        categorias_list_reload = conn.execute('SELECT * FROM categorias ORDER BY descricao').fetchall()
+        instituicoes_list_reload = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
+        cartoes_list_reload = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
+        return render_template('editar_movimento.html', movimento=movimento_reload, categorias=categorias_list_reload,
+                                instituicoes=instituicoes_list_reload, cartoes=cartoes_list_reload)
+
     if request.method == 'POST':
         data_movimento = request.form.get('data_movimento')
         data_efetivacao = request.form.get('data_efetivacao') or None
@@ -387,36 +396,14 @@ def edit_movimento(id):
         compartilhado = request.form.get('compartilhado')
 
         if not all([data_movimento, descricao, categoria_id, instituicao_id, valor_str, status, compartilhado]):
-             flash('Todos os campos são obrigatórios.', 'error')
-             # Recarrega a página de edição
-             movimento = conn.execute('SELECT * FROM movimentos WHERE id = ?', (id,)).fetchone()
-             categorias_list = conn.execute('SELECT * FROM categorias ORDER BY descricao').fetchall()
-             instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
-             cartoes_list = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
-             conn.close()
-             return render_template('editar_movimento.html', movimento=movimento, categorias=categorias_list,
-                                    instituicoes=instituicoes_list, cartoes=cartoes_list)
-        try:
-             valor = float(valor_str)
-        except ValueError:
-             flash('Valor inválido.', 'error')
-             # Recarrega a página de edição
-             movimento = conn.execute('SELECT * FROM movimentos WHERE id = ?', (id,)).fetchone()
-             categorias_list = conn.execute('SELECT * FROM categorias ORDER BY descricao').fetchall()
-             instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
-             cartoes_list = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
-             conn.close()
-             return render_template('editar_movimento.html', movimento=movimento, categorias=categorias_list,
-                                    instituicoes=instituicoes_list, cartoes=cartoes_list)
+             flash('Todos os campos são obrigatórios.', 'error'); return reload_edit_page()
+        try: valor = float(valor_str)
+        except ValueError: flash('Valor inválido.', 'error'); return reload_edit_page()
 
         categoria_tipo = conn.execute('SELECT tipo FROM categorias WHERE id = ?', (categoria_id,)).fetchone()['tipo']
         valor_final = abs(valor)
         if categoria_tipo == 'Despesa': valor_final = -valor_final
-
-        # Regra de negócio: Se status for Efetivado e não houver data de efetivação, usar data do movimento
-        if status == 'Efetivado' and not data_efetivacao:
-            data_efetivacao = data_movimento
-
+        if status == 'Efetivado' and not data_efetivacao: data_efetivacao = data_movimento
 
         conn.execute('UPDATE movimentos SET data_movimento = ?, data_efetivacao = ?, descricao = ?, categoria_id = ?, instituicao_id = ?, cartao_id = ?, valor = ?, status = ?, compartilhado = ? WHERE id = ?',
                      (data_movimento, data_efetivacao, descricao, categoria_id, instituicao_id, cartao_id, valor_final, status, compartilhado, id))
@@ -426,11 +413,11 @@ def edit_movimento(id):
 
     # GET Request
     movimento = conn.execute('SELECT * FROM movimentos WHERE id = ?', (id,)).fetchone()
+    if not movimento: return redirect(url_for('movimentos')) # Se o ID não existe
     categorias_list = conn.execute('SELECT * FROM categorias ORDER BY descricao').fetchall()
     instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
     cartoes_list = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
     conn.close()
-    if not movimento: return redirect(url_for('movimentos'))
     return render_template('editar_movimento.html', movimento=movimento, categorias=categorias_list,
                            instituicoes=instituicoes_list, cartoes=cartoes_list)
 
@@ -516,11 +503,11 @@ def edit_investimento(id):
         return redirect(url_for('investimentos'))
 
     investimento = conn.execute('SELECT * FROM investimentos WHERE id = ?', (id,)).fetchone()
+    if not investimento: return redirect(url_for('investimentos'))
     tickers_list = conn.execute('SELECT * FROM tickers ORDER BY descricao').fetchall()
     operacoes_list = conn.execute('SELECT * FROM operacoes ORDER BY descricao').fetchall()
     moedas_list = conn.execute('SELECT * FROM moedas ORDER BY codigo').fetchall()
     conn.close()
-    if not investimento: return redirect(url_for('investimentos'))
     return render_template('editar_investimento.html',
                            investimento=investimento,
                            tickers=tickers_list,
@@ -661,6 +648,7 @@ def salvar_importacao():
                 status = request.form.get(f'status_{i}')
                 compartilhado = request.form.get(f'compartilhado_{i}')
 
+                # Define data_efetivacao SOMENTE se status for 'Efetivado', senão NULL
                 data_efetivacao = data_movimento if status == 'Efetivado' else None
 
                 if not all([data_movimento, descricao, categoria_id, instituicao_id, valor_str, status, compartilhado]):
@@ -668,14 +656,20 @@ def salvar_importacao():
                 try: valor = float(valor_str)
                 except ValueError: flash(f"Linha {i} ({descricao}) ignorada: valor inválido.", 'error'); continue
 
-                categoria_tipo = categorias_tipos.get(int(categoria_id))
-                if not categoria_tipo: flash(f"Linha {i} ({descricao}) ignorada: tipo de categoria não encontrado.", 'error'); continue
+                # Converte categoria_id para int ANTES de usar no dict
+                try:
+                     categoria_id_int = int(categoria_id)
+                     categoria_tipo = categorias_tipos.get(categoria_id_int)
+                except (ValueError, TypeError):
+                     categoria_tipo = None # Categoria ID inválido vindo do form?
+
+                if not categoria_tipo: flash(f"Linha {i} ({descricao}) ignorada: tipo de categoria não encontrado para ID {categoria_id}.", 'error'); continue
 
                 valor_final = abs(valor)
                 if categoria_tipo == 'Despesa': valor_final = -valor_final
 
                 conn.execute('INSERT INTO movimentos (data_movimento, data_efetivacao, descricao, categoria_id, instituicao_id, cartao_id, valor, status, compartilhado) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)',
-                             (data_movimento, data_efetivacao, descricao, categoria_id, instituicao_id, cartao_id, valor_final, status, compartilhado))
+                             (data_movimento, data_efetivacao, descricao, categoria_id_int, instituicao_id, cartao_id, valor_final, status, compartilhado))
                 count_sucesso += 1
 
         flash(f"{count_sucesso} de {total_rows} movimentos importados com sucesso!", 'success')
@@ -683,135 +677,125 @@ def salvar_importacao():
     except sqlite3.Error as e: flash(f"Erro DB: {e}. Nenhuma linha salva.", 'error')
     except Exception as e: flash(f"Erro inesperado: {e}", 'error')
     finally:
-        if filename: # Garante que filename existe
+        if filename:
              filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
              if os.path.exists(filepath): os.remove(filepath)
         conn.close()
 
     return redirect(url_for('movimentos'))
 
-# --- ROTA RELATÓRIO FLUXO (REGRAS ATUALIZADAS) ---
+# --- ROTA RELATÓRIO FLUXO ---
 @app.route('/relatorio/fluxo')
 def relatorio_fluxo():
     conn = get_db_connection()
-
     data_inicio = request.args.get('data_inicio')
     data_fim = request.args.get('data_fim')
     filtro_compartilhado = request.args.get('compartilhado', 'Todos')
 
-    # Query base buscando TUDO, incluindo data_efetivacao como TEXTO
     sql = '''
         SELECT 
-            m.data_movimento,
-            m.data_efetivacao, -- Importante buscar como texto inicialmente
-            m.valor,
-            m.compartilhado,
-            m.status,
-            c.descricao AS categoria,
-            c.tipo AS categoria_tipo,
-            i.descricao AS instituicao,
-            cc.descricao AS cartao
+            m.data_movimento, m.data_efetivacao, m.valor, m.compartilhado, m.status,
+            c.descricao AS categoria, c.tipo AS categoria_tipo,
+            i.descricao AS instituicao, cc.descricao AS cartao
         FROM movimentos m
         JOIN categorias c ON m.categoria_id = c.id
         JOIN instituicoes i ON m.instituicao_id = i.id
         LEFT JOIN cartoes_credito cc ON m.cartao_id = cc.id
-        WHERE 1=1 
-    '''
+        WHERE 1=1 '''
     params = []
-
-    # Filtros principais baseados na DATA DO MOVIMENTO
-    if data_inicio: sql += " AND m.data_movimento >= ?"; params.append(data_inicio)
-    if data_fim: sql += " AND m.data_movimento <= ?"; params.append(data_fim)
-    # Filtro de compartilhado aplicado a todos os dados
     if filtro_compartilhado != 'Todos': sql += " AND m.compartilhado = ?"; params.append(filtro_compartilhado)
 
     try:
-        # Lê data_movimento como data, data_efetivacao como objeto (texto)
         df_base = pd.read_sql_query(sql, conn, params=params, parse_dates=['data_movimento'])
         conn.close()
-        # Converte data_efetivacao para datetime DEPOIS, tratando erros como NaT (Not a Time)
-        df_base['data_efetivacao'] = pd.to_datetime(df_base['data_efetivacao'], errors='coerce') 
-
+        df_base['data_efetivacao'] = pd.to_datetime(df_base['data_efetivacao'], errors='coerce')
     except Exception as e:
         conn.close(); flash(f"Erro ao buscar dados: {e}", "error")
-        return render_template('relatorio_fluxo.html', tables={}, months=[], data_inicio=data_inicio, data_fim=data_fim, filtro_compartilhado=filtro_compartilhado)
+        return render_template('relatorio_fluxo.html', tables={}, months=[], data_inicio=data_inicio, data_fim=data_fim, filtro_compartilhado=filtro_compartilhado, show_table=False)
 
     if df_base.empty:
-        flash("Nenhum movimento encontrado para o período e filtro selecionados.", "info")
-        return render_template('relatorio_fluxo.html', tables={}, months=[], data_inicio=data_inicio, data_fim=data_fim, filtro_compartilhado=filtro_compartilhado)
+        flash("Nenhum movimento encontrado para o filtro compartilhado.", "info")
+        return render_template('relatorio_fluxo.html', tables={}, months=[], data_inicio=data_inicio, data_fim=data_fim, filtro_compartilhado=filtro_compartilhado, show_table=False)
 
-    # Define os meses baseado na DATA DE MOVIMENTO para o cabeçalho
-    df_base['MesAnoMov'] = df_base['data_movimento'].dt.strftime('%Y-%m')
-    all_months = sorted(df_base['MesAnoMov'].unique())
+    # Filtro de DATA aplicado DEPOIS
+    # Cria cópias filtradas para cada bloco
+    df_fluxo_filtrado = df_base.copy()
+    df_banco_filtrado = df_base.copy()
+    df_cartao_filtrado = df_base.copy()
 
-    # --- 1. Fluxo (Receitas/Despesas) - Usa data_movimento, Todos Status ---
-    df_fluxo = df_base.copy() # Usa todos os dados base
-    df_fluxo['MesAno'] = df_fluxo['MesAnoMov'] # Agrupa por MesAno do movimento
-    pivot_fluxo = pd.pivot_table(df_fluxo, values='valor', index=['categoria_tipo', 'categoria'], columns='MesAno', aggfunc='sum', fill_value=0)
+    if data_inicio: 
+        df_fluxo_filtrado = df_fluxo_filtrado[df_fluxo_filtrado['data_movimento'] >= pd.to_datetime(data_inicio)]
+        df_banco_filtrado = df_banco_filtrado[df_banco_filtrado['data_efetivacao'] >= pd.to_datetime(data_inicio)]
+        df_cartao_filtrado = df_cartao_filtrado[df_cartao_filtrado['data_efetivacao'] >= pd.to_datetime(data_inicio)]
+    if data_fim: 
+        df_fluxo_filtrado = df_fluxo_filtrado[df_fluxo_filtrado['data_movimento'] <= pd.to_datetime(data_fim)]
+        df_banco_filtrado = df_banco_filtrado[df_banco_filtrado['data_efetivacao'] <= pd.to_datetime(data_fim)]
+        df_cartao_filtrado = df_cartao_filtrado[df_cartao_filtrado['data_efetivacao'] <= pd.to_datetime(data_fim)]
 
-    # Reindexar para garantir todos os meses e ordem
-    pivot_fluxo = pivot_fluxo.reindex(columns=all_months, fill_value=0) 
+    # Define os meses baseado na DATA DE MOVIMENTO do DF de fluxo filtrado
+    all_months = sorted(df_fluxo_filtrado['data_movimento'].dt.strftime('%Y-%m').unique()) if not df_fluxo_filtrado.empty else []
+    all_cols_with_media = all_months + ['Média']
 
-    # Calcula Média (baseado nos meses exibidos)
-    if not pivot_fluxo.empty:
-        pivot_fluxo['Média'] = pivot_fluxo[all_months].mean(axis=1)
+    # --- 1. Fluxo (Receitas/Despesas) ---
+    pivot_fluxo = pd.DataFrame()
+    resultado = pd.Series(0, index=all_cols_with_media)
+    total_receitas = pd.Series(0, index=all_cols_with_media)
+    total_despesas = pd.Series(0, index=all_cols_with_media)
 
-    # Totais
-    total_receitas = pivot_fluxo.loc['Receita'].sum() if 'Receita' in pivot_fluxo.index.get_level_values(0) else pd.Series(0, index=pivot_fluxo.columns)
-    total_despesas = pivot_fluxo.loc['Despesa'].sum() if 'Despesa' in pivot_fluxo.index.get_level_values(0) else pd.Series(0, index=pivot_fluxo.columns)
-    resultado = total_receitas + total_despesas
+    if not df_fluxo_filtrado.empty:
+        df_fluxo_filtrado['MesAno'] = df_fluxo_filtrado['data_movimento'].dt.strftime('%Y-%m')
+        pivot_fluxo = pd.pivot_table(df_fluxo_filtrado, values='valor', index=['categoria_tipo', 'categoria'], columns='MesAno', aggfunc='sum', fill_value=0)
+        pivot_fluxo = pivot_fluxo.reindex(columns=all_months, fill_value=0)
+        if not pivot_fluxo.empty:
+            pivot_fluxo['Média'] = pivot_fluxo[all_months].mean(axis=1) if all_months else 0 # Evita erro se all_months for vazio
+            total_receitas = pivot_fluxo.loc['Receita'].sum() if 'Receita' in pivot_fluxo.index.get_level_values(0) else pd.Series(0, index=pivot_fluxo.columns)
+            total_despesas = pivot_fluxo.loc['Despesa'].sum() if 'Despesa' in pivot_fluxo.index.get_level_values(0) else pd.Series(0, index=pivot_fluxo.columns)
+            resultado = total_receitas + total_despesas
 
-    # --- 2. Saldos por Banco - Usa data_efetivacao, Efetivado, Sem Cartão ---
-    df_banco_filtrado = df_base[(df_base['status'] == 'Efetivado') & (df_base['cartao'].isna()) & (df_base['data_efetivacao'].notna())].copy()
+    # --- 2. Saldos por Banco ---
+    df_banco_final = df_banco_filtrado[(df_banco_filtrado['status'] == 'Efetivado') & (df_banco_filtrado['cartao'].isna()) & (df_banco_filtrado['data_efetivacao'].notna())]
+    pivot_banco = pd.DataFrame()
+    total_bancos = pd.Series(0, index=all_cols_with_media)
 
-    pivot_banco = pd.DataFrame() # DataFrame vazio por default
-    total_bancos = pd.Series(0, index=all_months + ['Média']) # Series com zeros
+    if not df_banco_final.empty:
+        df_banco_final['MesAno'] = df_banco_final['data_efetivacao'].dt.strftime('%Y-%m')
+        # Filtra novamente pelos meses do cabeçalho
+        df_banco_final = df_banco_final[df_banco_final['MesAno'].isin(all_months)] 
 
-    if not df_banco_filtrado.empty:
-        df_banco_filtrado['MesAno'] = df_banco_filtrado['data_efetivacao'].dt.strftime('%Y-%m')
-        # Filtra pelos meses relevantes (do cabeçalho) antes de pivotar
-        df_banco_filtrado = df_banco_filtrado[df_banco_filtrado['MesAno'].isin(all_months)] 
-
-        pivot_banco = pd.pivot_table(df_banco_filtrado, values='valor', index='instituicao', columns='MesAno', aggfunc='sum', fill_value=0)
-        pivot_banco = pivot_banco.reindex(columns=all_months, fill_value=0) # Garante todos os meses
+        pivot_banco = pd.pivot_table(df_banco_final, values='valor', index='instituicao', columns='MesAno', aggfunc='sum', fill_value=0)
+        pivot_banco = pivot_banco.reindex(columns=all_months, fill_value=0)
         if not pivot_banco.empty:
-            pivot_banco['Média'] = pivot_banco[all_months].mean(axis=1)
+            pivot_banco['Média'] = pivot_banco[all_months].mean(axis=1) if all_months else 0
             total_bancos = pivot_banco.sum()
 
-    # --- 3. Gastos por Cartão - Usa data_efetivacao, Todos Status, Com Cartão ---
-    df_cartao_filtrado = df_base[df_base['cartao'].notna() & df_base['data_efetivacao'].notna()].copy()
-
+    # --- 3. Gastos por Cartão ---
+    df_cartao_final = df_cartao_filtrado[df_cartao_filtrado['cartao'].notna() & df_cartao_filtrado['data_efetivacao'].notna()]
     pivot_cartao = pd.DataFrame()
-    total_cartoes = pd.Series(0, index=all_months + ['Média'])
+    total_cartoes = pd.Series(0, index=all_cols_with_media)
 
-    if not df_cartao_filtrado.empty:
-        df_cartao_filtrado['MesAno'] = df_cartao_filtrado['data_efetivacao'].dt.strftime('%Y-%m')
-        # Filtra pelos meses relevantes antes de pivotar
-        df_cartao_filtrado = df_cartao_filtrado[df_cartao_filtrado['MesAno'].isin(all_months)] 
+    if not df_cartao_final.empty:
+        df_cartao_final['MesAno'] = df_cartao_final['data_efetivacao'].dt.strftime('%Y-%m')
+        # Filtra novamente pelos meses do cabeçalho
+        df_cartao_final = df_cartao_final[df_cartao_final['MesAno'].isin(all_months)] 
 
-        # Usamos aggfunc='sum' e depois .abs() para somar débitos e mostrar positivo
-        pivot_cartao = pd.pivot_table(df_cartao_filtrado, values='valor', index='cartao', columns='MesAno', aggfunc='sum', fill_value=0).abs()
-        pivot_cartao = pivot_cartao.reindex(columns=all_months, fill_value=0) # Garante todos os meses
+        pivot_cartao = pd.pivot_table(df_cartao_final, values='valor', index='cartao', columns='MesAno', aggfunc='sum', fill_value=0).abs()
+        pivot_cartao = pivot_cartao.reindex(columns=all_months, fill_value=0)
         if not pivot_cartao.empty:
-            pivot_cartao['Média'] = pivot_cartao[all_months].mean(axis=1)
+            pivot_cartao['Média'] = pivot_cartao[all_months].mean(axis=1) if all_months else 0
             total_cartoes = pivot_cartao.sum()
 
     # --- Montar Dicionário para Template ---
-    all_cols_with_media = all_months + ['Média'] # Colunas que precisam existir nos totais
-
-    # Helper para garantir que todos os meses/media existam nos totais e formatar
     def prepare_total_dict(series_data):
         dict_data = series_data.to_dict()
         for col in all_cols_with_media:
-            if col not in dict_data:
-                dict_data[col] = 0 # Adiciona zero se faltar
+            if col not in dict_data: dict_data[col] = 0
         return {key: format_brl(value) for key, value in dict_data.items()}
 
     tables = {
         'Resultado': prepare_total_dict(resultado),
-        'Receitas': pivot_fluxo.loc['Receita'].applymap(format_brl).reset_index().to_dict('records') if 'Receita' in pivot_fluxo.index.get_level_values(0) else [],
+        'Receitas': pivot_fluxo.loc['Receita'].applymap(format_brl).reset_index().to_dict('records') if not pivot_fluxo.empty and 'Receita' in pivot_fluxo.index.get_level_values(0) else [],
         'Total_Receitas': prepare_total_dict(total_receitas),
-        'Despesas': pivot_fluxo.loc['Despesa'].applymap(format_brl).reset_index().to_dict('records') if 'Despesa' in pivot_fluxo.index.get_level_values(0) else [],
+        'Despesas': pivot_fluxo.loc['Despesa'].applymap(format_brl).reset_index().to_dict('records') if not pivot_fluxo.empty and 'Despesa' in pivot_fluxo.index.get_level_values(0) else [],
         'Total_Despesas': prepare_total_dict(total_despesas),
         'Saldos_Banco': pivot_banco.applymap(format_brl).reset_index().to_dict('records') if not pivot_banco.empty else [],
         'Total_Saldos_Banco': prepare_total_dict(total_bancos),
@@ -819,12 +803,73 @@ def relatorio_fluxo():
         'Total_Gastos_Cartao': prepare_total_dict(total_cartoes)
     }
 
+    # Só mostra a tabela se houver meses (ou seja, se o filtro de fluxo retornou algo)
+    show_table = bool(all_months) 
+    if not show_table and (data_inicio or data_fim): # Se filtrou mas não achou nada no fluxo
+         flash("Nenhum movimento (receita/despesa) encontrado para o período e filtro selecionados.", "info")
+
+
     return render_template('relatorio_fluxo.html',
                            tables=tables,
                            months=all_months,
                            data_inicio=data_inicio,
                            data_fim=data_fim,
-                           filtro_compartilhado=filtro_compartilhado)
+                           filtro_compartilhado=filtro_compartilhado,
+                           show_table=show_table)
+
+# --- ROTA RELATÓRIO SALDOS BANCÁRIOS ---
+@app.route('/relatorio/saldos')
+def relatorio_saldos():
+    conn = get_db_connection()
+    data_saldo_str = request.args.get('data_saldo', date.today().strftime('%Y-%m-%d'))
+
+    try:
+        data_saldo = datetime.strptime(data_saldo_str, '%Y-%m-%d').date()
+    except ValueError:
+        flash("Formato de data inválido. Use AAAA-MM-DD.", 'error')
+        data_saldo = date.today()
+        data_saldo_str = data_saldo.strftime('%Y-%m-%d')
+
+    sql = '''
+        SELECT 
+            i.descricao AS instituicao,
+            SUM(m.valor) AS saldo
+        FROM movimentos m
+        JOIN instituicoes i ON m.instituicao_id = i.id
+        WHERE 
+            m.status = 'Efetivado'
+            AND m.cartao_id IS NULL
+            AND m.data_efetivacao IS NOT NULL 
+            AND date(m.data_efetivacao) <= ? -- Usa date() para comparar apenas a data
+        GROUP BY i.descricao
+        ORDER BY i.descricao
+    '''
+    params = [data_saldo_str]
+
+    try:
+        saldos = conn.execute(sql, params).fetchall()
+        # Adiciona instituições com saldo zero
+        instituicoes_todas = conn.execute("SELECT descricao FROM instituicoes").fetchall()
+        instituicoes_com_saldo = {s['instituicao'] for s in saldos}
+        saldos_list = [dict(s) for s in saldos] # Converte para lista de dicionários mutáveis
+        for inst in instituicoes_todas:
+             if inst['descricao'] not in instituicoes_com_saldo:
+                 saldos_list.append({'instituicao': inst['descricao'], 'saldo': 0})
+        # Reordena alfabeticamente
+        saldos_list.sort(key=lambda x: x['instituicao'])
+
+        conn.close()
+    except Exception as e:
+        conn.close()
+        flash(f"Erro ao calcular saldos: {e}", "error")
+        saldos_list = []
+
+    saldo_total = sum(s['saldo'] for s in saldos_list) if saldos_list else 0
+
+    return render_template('relatorio_saldos.html', 
+                           saldos=saldos_list, 
+                           data_saldo=data_saldo_str,
+                           saldo_total=saldo_total)
 
 if __name__ == '__main__':
     app.run(debug=True)

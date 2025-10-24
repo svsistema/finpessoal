@@ -1,0 +1,53 @@
+{% extends "base.html" %}
+
+{% block title %}Relatório - Saldos Bancários{% endblock %}
+
+{% block content %}
+    <h2>Relatório - Saldos Bancários</h2>
+
+    <form method="GET" action="{{ url_for('relatorio_saldos') }}" style="margin: 1.5rem 0; background-color: #f9f9f9; padding: 1rem; border-radius: 8px;">
+        <div style="display: flex; gap: 1rem; align-items: flex-end;">
+            <div class="form-group" style="margin-bottom: 0; flex-grow: 1;">
+                <label for="data_saldo">Saldo em:</label>
+                <input type="date" name="data_saldo" value="{{ data_saldo }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Atualizar Saldos</button>
+        </div>
+    </form>
+
+    {% if saldos %}
+    <table class="table table-bordered table-hover table-sm" style="margin-top: 2rem; max-width: 600px;">
+        <thead>
+            <tr>
+                <th>Conta Bancária (Instituição)</th>
+                <th style="text-align: right;">Saldo</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for saldo in saldos %}
+            <tr>
+                <td>{{ saldo.instituicao }}</td>
+                <td style="text-align: right; color: {% if saldo.saldo >= 0 %}green{% else %}red{% endif %};">
+                    {{ format_brl(saldo.saldo) }}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot>
+            <tr style="background-color: #f0f2f5; font-weight: bold;">
+                <td>Saldo Total</td>
+                <td style="text-align: right; color: {% if saldo_total >= 0 %}green{% else %}red{% endif %};">
+                    {{ format_brl(saldo_total) }}
+                </td>
+            </tr>
+        </tfoot>
+    </table>
+    {% else %}
+         {% if request.args.get('data_saldo') %} {# Mostra mensagem apenas se já filtrou #}
+             <p style="margin-top: 2rem;">Nenhum saldo encontrado para a data selecionada (verifique se há movimentos efetivados até esta data).</p>
+         {% else %}
+             <p style="margin-top: 2rem;">Use o filtro acima para ver os saldos.</p>
+         {% endif %}
+    {% endif %}
+
+{% endblock %}
