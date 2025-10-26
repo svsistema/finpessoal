@@ -1,0 +1,185 @@
+    {% extends "base.html" %}
+
+    {% block title %}Dashboard Principal{% endblock %}
+
+    {% block content %}
+        <div class="page-header">
+            <h1>Dashboard Principal</h1>
+            <p>Sua visão 360° das finanças.</p>
+        </div>
+
+        <div class="form-grid cols-3"> {# Reutilizando a classe de grid #}
+            <div class="card">
+                <h3 class="card-title-small">Saldo Bancário Total (Aprox.)</h3>
+                <p class="card-value {% if saldo_bancario_total >= 0 %}text-success{% else %}text-danger{% endif %}">
+                    {{ format_brl(saldo_bancario_total) }}
+                </p>
+                <small class="card-footer">Soma dos saldos efetivados (sem cartões)</small>
+            </div>
+            <div class="card">
+                <h3 class="card-title-small">Patrimônio Líquido</h3>
+                <p class="card-value text-info">Em breve</p>
+                <small class="card-footer">Incluirá investimentos</small>
+            </div>
+            <div class="card">
+                <h3 class="card-title-small">Taxa de Poupança</h3>
+                <p class="card-value text-info">Em breve</p>
+                <small class="card-footer">(Receita - Despesa) / Receita</small>
+            </div>
+        </div>
+
+        <div class="form-grid cols-2">
+            <div class="card">
+                <h3 class="card-title">Receitas vs Despesas (Últimos 6 Meses)</h3>
+                <div style="position: relative; height:300px; width:100%">
+                    <canvas id="receitaDespesaChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="card-title">Top 5 Categorias de Despesa (Últimos 30 dias)</h3>
+                <div style="position: relative; height:300px; width:100%">
+                    <canvas id="topCategoriasChart"></canvas>
+                </div>
+            </div>
+        </div>
+
+        <div class="form-grid cols-2">
+            <div class="card">
+                <h3 class="card-title">Distribuição Compartilhada (Despesas, Últimos 30 dias)</h3>
+                <div style="position: relative; height:300px; width:100%">
+                    <canvas id="compartilhadoChart"></canvas>
+                </div>
+            </div>
+            <div class="card">
+                <h3 class="card-title">Alertas</h3>
+                <p style="text-align: center; padding: 20px; color: #64748b;">Em breve...</p>
+                {# Aqui podem entrar alertas de gastos acima da média #}
+            </div>
+        </div>
+
+        {# Estilos específicos para os cards do dashboard #}
+        <style>
+            .card-title-small {
+                font-size: 13px;
+                color: #64748b;
+                font-weight: 500;
+                margin-bottom: 8px;
+                text-transform: uppercase;
+            }
+            .card-value {
+                font-size: 28px;
+                font-weight: 700;
+                margin-bottom: 5px;
+                line-height: 1.2;
+            }
+            .text-success { color: #15803d; } /* Verde escuro */
+            .text-danger { color: #b91c1c; } /* Vermelho escuro */
+            .text-info { color: #1d4ed8; } /* Azul escuro */
+
+            .card-footer {
+                font-size: 12px;
+                color: #94a3b8;
+            }
+            /* Removemos a regra geral do canvas, pois o container define a altura */
+            /* canvas { max-width: 100%; height: auto !important; } */
+        </style>
+
+    {% endblock %}
+
+    {% block extra_js %} {# Bloco para o JavaScript dos gráficos #}
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            // --- Gráfico Receita vs Despesa ---
+            const ctxRD = document.getElementById('receitaDespesaChart');
+            if (ctxRD) {
+                new Chart(ctxRD, {
+                    type: 'bar', // ou 'line'
+                    data: {
+                        labels: {{ chart_rd_labels | safe }},
+                        datasets: [{
+                            label: 'Receitas',
+                            data: {{ chart_rd_receitas | safe }},
+                            backgroundColor: 'rgba(75, 192, 192, 0.6)', // Verde/Azul claro
+                            borderColor: 'rgb(75, 192, 192)',
+                            borderWidth: 1
+                        }, {
+                            label: 'Despesas',
+                            data: {{ chart_rd_despesas | safe }},
+                            backgroundColor: 'rgba(255, 99, 132, 0.6)', // Vermelho claro
+                            borderColor: 'rgb(255, 99, 132)',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        scales: {
+                            y: { beginAtZero: true, ticks: { callback: value => 'R$ ' + value.toLocaleString('pt-BR') } }
+                        },
+                        responsive: true,
+                        maintainAspectRatio: false // Mantém false para preencher o container
+                    }
+                });
+            }
+
+            // --- Gráfico Top Categorias ---
+            const ctxCat = document.getElementById('topCategoriasChart');
+            if (ctxCat) {
+                new Chart(ctxCat, {
+                    type: 'doughnut', // ou 'pie' ou 'bar'
+                    data: {
+                        labels: {{ chart_cat_labels | safe }},
+                        datasets: [{
+                            label: ' Gasto (R$)',
+                            data: {{ chart_cat_valores | safe }},
+                            backgroundColor: [ // Paleta de cores
+                                'rgba(255, 99, 132, 0.7)',
+                                'rgba(54, 162, 235, 0.7)',
+                                'rgba(255, 206, 86, 0.7)',
+                                'rgba(75, 192, 192, 0.7)',
+                                'rgba(153, 102, 255, 0.7)'
+                            ],
+                            hoverOffset: 4
+                        }]
+                    },
+                    options: { responsive: true, maintainAspectRatio: false } // Mantém false
+                });
+            }
+
+            // --- Gráfico Compartilhado ---
+            const ctxComp = document.getElementById('compartilhadoChart');
+            if (ctxComp) {
+                const compLabels = {{ chart_comp_labels | safe }};
+                const compValores = {{ chart_comp_valores | safe }};
+
+                if (compLabels && compLabels.length > 0 && compValores && compValores.length > 0) {
+                    new Chart(ctxComp, {
+                        type: 'pie', // ou 'doughnut'
+                        data: {
+                            labels: compLabels,
+                            datasets: [{
+                                label: ' Gasto (R$)',
+                                data: compValores,
+                                backgroundColor: [ // Outra paleta
+                                    'rgba(153, 102, 255, 0.7)',
+                                    'rgba(255, 159, 64, 0.7)',
+                                    'rgba(99, 255, 132, 0.7)' // Verde
+                                ],
+                                hoverOffset: 4
+                            }]
+                        },
+                        options: { responsive: true, maintainAspectRatio: false } // Mantém false
+                    });
+                } else {
+                    ctxComp.style.display = 'none';
+                    const msgDiv = document.createElement('p');
+                    msgDiv.textContent = 'Nenhuma despesa compartilhada encontrada nos últimos 30 dias.';
+                    msgDiv.style.textAlign = 'center';
+                    msgDiv.style.padding = '20px';
+                    msgDiv.style.color = '#64748b';
+                    // Adiciona a mensagem DEPOIS do canvas (dentro do seu container)
+                    ctxComp.parentNode.appendChild(msgDiv);
+                }
+            }
+
+        });
+    </script>
+    {% endblock %}

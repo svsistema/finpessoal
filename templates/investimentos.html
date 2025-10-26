@@ -8,7 +8,7 @@
     <form method="POST" action="{{ url_for('add_investimento') }}">
         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
-                <label for="data_investimento">Data da Operação:</label>
+                <label for="data_investimento">Data da Operação:*</label>
                 <input type="date" name="data_investimento" required>
             </div>
             <div class="form-group">
@@ -16,39 +16,80 @@
                 <input type="date" name="data_vencimento">
             </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
             <div class="form-group">
-                <label for="ticker_id">Ticker:</label>
+                <label for="ticker_id">Ticker:*</label>
                 <select name="ticker_id" required>
                     <option value="">-- Selecione --</option>
-                    {% for t in tickers %}<option value="{{ t.id }}">{{ t.descricao }} ({{ t.classe }})</option>{% endfor %}
+                    {% for t in tickers %}<option value="{{ t.id }}">{{ t.descricao }}</option>{% endfor %}
                 </select>
             </div>
             <div class="form-group">
-                <label for="operacao_id">Operação:</label>
+                <label for="operacao_id">Operação:*</label>
                 <select name="operacao_id" required>
                     <option value="">-- Selecione --</option>
                     {% for o in operacoes %}<option value="{{ o.id }}">{{ o.descricao }} ({{ o.natureza }})</option>{% endfor %}
                 </select>
             </div>
              <div class="form-group">
-                <label for="moeda_id">Moeda:</label>
+                <label for="moeda_id">Moeda:*</label>
                 <select name="moeda_id" required>
                     <option value="">-- Selecione --</option>
                     {% for m in moedas %}<option value="{{ m.id }}">{{ m.codigo }}</option>{% endfor %}
                 </select>
             </div>
-        </div>
-         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
-                <label for="quantidade">Quantidade:</label>
+                <label for="instituicao_id">Instituição (Custódia):</label>
+                <select name="instituicao_id">
+                    <option value="">-- Opcional --</option>
+                    {% for i in instituicoes %}<option value="{{ i.id }}">{{ i.descricao }}</option>{% endfor %}
+                </select>
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="quantidade">Quantidade:*</label>
                 <input type="number" name="quantidade" step="any" min="0" required placeholder="Ex: 100">
             </div>
+            <div class="form-group">
+                <label for="valor_unitario">Valor Unitário (R$):*</label>
+                <input type="number" name="valor_unitario" step="any" min="0" required placeholder="Ex: 15.00">
+            </div>
              <div class="form-group">
-                <label for="valor_total">Valor Total da Operação:</label>
-                <input type="number" name="valor_total" step="0.01" min="0" required placeholder="Ex: 1500.00">
+                <label for="valor_total">Valor Total Bruto (R$):*</label>
+                <input type="number" name="valor_total" step="0.01" min="0" required placeholder="Qtd x V.U.">
+                 <small>Valor = Quantidade x Valor Unitário</small>
             </div>
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="custos">Custos/Corretagem (R$):</label>
+                <input type="number" name="custos" step="0.01" min="0" placeholder="Ex: 4.90">
+            </div>
+            <div class="form-group">
+                <label for="taxas">Taxas (B3, etc.) (R$):</label>
+                <input type="number" name="taxas" step="0.01" min="0" placeholder="Ex: 0.50">
+            </div>
+            <div class="form-group">
+                <label for="irrf">IRRF (R$):</label>
+                <input type="number" name="irrf" step="0.01" min="0" placeholder="Ex: 0.10">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+             <div class="form-group">
+                <label for="taxa_negociada">Taxa Negociada (% ou Valor):</label>
+                <input type="number" step="any" name="taxa_negociada" placeholder="Ex: 10.5 ou 110">
+            </div>
+            <div class="form-group">
+                <label for="indexador">Indexador (Renda Fixa):</label>
+                <input type="text" name="indexador" placeholder="Ex: CDI, IPCA, SELIC">
+            </div>
+        </div>
+        <div class="form-group">
+            <label for="observacao">Observação:</label>
+            <input type="text" name="observacao" autocomplete="off">
+        </div>
+
         <button type="submit" class="btn btn-primary">Adicionar Operação</button>
     </form>
 
@@ -60,38 +101,49 @@
     </div>
     <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
 
-    <table style="font-size: 0.9em;">
-        <thead>
-            <tr>
-                <th style="width: 5%;"></th>
-                <th>Data</th>
-                <th>Vencimento</th>
-                <th>Ticker</th>
-                <th>Classe</th>
-                <th>Operação</th>
-                <th>Moeda</th>
-                <th>Quantidade</th>
-                <th>Valor Total</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for inv in investimentos %}
-            <tr id="row-{{ inv.id }}">
-                <td><input type="radio" name="selecionado" value="{{ inv.id }}" onchange="itemSelecionado(this, 'investimentos')"></td>
-                <td>{{ inv.data_inv_formatada }}</td>
-                <td>{{ inv.data_venc_formatada or '---' }}</td>
-                <td>{{ inv.ticker_nome }}</td>
-                <td>{{ inv.ticker_classe }}</td>
-                <td>{{ inv.operacao_nome }}</td>
-                <td>{{ inv.moeda_codigo }}</td>
-                <td>{{ inv.quantidade }}</td>
-                <td style="color: {% if inv.operacao_natureza == 'Entrada' %}green{% else %}red{% endif %};">
-                    R$ {{ "%.2f"|format(inv.valor_total|abs) }}
-                </td>
-            </tr>
-            {% else %}
-            <tr><td colspan="9">Nenhuma operação de investimento lançada.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <div style="overflow-x: auto;"> <table style="font-size: 0.85em; white-space: nowrap;"> <thead>
+                <tr>
+                    <th style="width: 3%;"></th>
+                    <th>Data</th>
+                    <th>Venc.</th>
+                    <th>Ticker</th>
+                    <th>Operação</th>
+                    <th>Instituição</th>
+                    <th>Qtd.</th>
+                    <th>V. Unit.</th>
+                    <th>V. Total Líq.</th> <th>Custos</th>
+                    <th>Taxas</th>
+                    <th>IRRF</th>
+                    <th>Taxa Neg.</th>
+                    <th>Indexador</th>
+                    <th>Obs.</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for inv in investimentos %}
+                <tr id="row-{{ inv.id }}">
+                    <td><input type="radio" name="selecionado" value="{{ inv.id }}" onchange="itemSelecionado(this, 'investimentos')"></td>
+                    <td>{{ inv.data_inv_formatada }}</td>
+                    <td>{{ inv.data_venc_formatada or '---' }}</td>
+                    <td>{{ inv.ticker_nome }}</td>
+                    <td>{{ inv.operacao_nome }}</td>
+                    <td>{{ inv.instituicao_nome or '---' }}</td>
+                    <td style="text-align: right;">{{ inv.quantidade }}</td>
+                    <td style="text-align: right;">{{ format_brl(inv.valor_unitario) }}</td>
+                    <td style="text-align: right; color: {% if inv.operacao_natureza == 'Entrada' %}green{% else %}red{% endif %};">
+                        {{ format_brl(inv.valor_total) }} {# Este é o valor_total LÍQUIDO #}
+                    </td>
+                    <td style="text-align: right;">{{ format_brl(inv.custos) }}</td>
+                    <td style="text-align: right;">{{ format_brl(inv.taxas) }}</td>
+                    <td style="text-align: right;">{{ format_brl(inv.irrf) }}</td>
+                    <td style="text-align: right;">{{ inv.taxa_negociada if inv.taxa_negociada is not none else '---' }}</td>
+                    <td>{{ inv.indexador or '---' }}</td>
+                    <td>{{ inv.observacao or '---' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="15">Nenhuma operação de investimento lançada.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
 {% endblock %}

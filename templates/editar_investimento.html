@@ -6,9 +6,9 @@
     <h2>Editar Operação de Investimento</h2>
 
     <form method="POST">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
             <div class="form-group">
-                <label for="data_investimento">Data da Operação:</label>
+                <label for="data_investimento">Data da Operação:*</label>
                 <input type="date" name="data_investimento" value="{{ investimento.data_investimento }}" required>
             </div>
             <div class="form-group">
@@ -16,48 +16,86 @@
                 <input type="date" name="data_vencimento" value="{{ investimento.data_vencimento }}">
             </div>
         </div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 1rem;">
             <div class="form-group">
-                <label for="ticker_id">Ticker:</label>
+                <label for="ticker_id">Ticker:*</label>
                 <select name="ticker_id" required>
                     {% for t in tickers %}
-                    <option value="{{ t.id }}" {% if t.id == investimento.ticker_id %}selected{% endif %}>
-                        {{ t.descricao }} ({{ t.classe }})
-                    </option>
+                    <option value="{{ t.id }}" {% if t.id == investimento.ticker_id %}selected{% endif %}>{{ t.descricao }}</option>
                     {% endfor %}
                 </select>
             </div>
             <div class="form-group">
-                <label for="operacao_id">Operação:</label>
+                <label for="operacao_id">Operação:*</label>
                 <select name="operacao_id" required>
-                    {% for o in operacoes %}
-                    <option value="{{ o.id }}" {% if o.id == investimento.operacao_id %}selected{% endif %}>
-                        {{ o.descricao }} ({{ o.natureza }})
-                    </option>
-                    {% endfor %}
+                     {% for o in operacoes %}
+                     <option value="{{ o.id }}" {% if o.id == investimento.operacao_id %}selected{% endif %}>{{ o.descricao }} ({{ o.natureza }})</option>
+                     {% endfor %}
                 </select>
             </div>
              <div class="form-group">
-                <label for="moeda_id">Moeda:</label>
+                <label for="moeda_id">Moeda:*</label>
                 <select name="moeda_id" required>
-                    {% for m in moedas %}
-                    <option value="{{ m.id }}" {% if m.id == investimento.moeda_id %}selected{% endif %}>
-                        {{ m.codigo }}
-                    </option>
+                     {% for m in moedas %}
+                     <option value="{{ m.id }}" {% if m.id == investimento.moeda_id %}selected{% endif %}>{{ m.codigo }}</option>
+                     {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="instituicao_id">Instituição (Custódia):</label>
+                <select name="instituicao_id">
+                    <option value="">-- Opcional --</option>
+                    {% for i in instituicoes %}
+                    <option value="{{ i.id }}" {% if i.id == investimento.instituicao_id %}selected{% endif %}>{{ i.descricao }}</option>
                     {% endfor %}
                 </select>
             </div>
         </div>
-         <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
             <div class="form-group">
-                <label for="quantidade">Quantidade:</label>
+                <label for="quantidade">Quantidade:*</label>
                 <input type="number" name="quantidade" step="any" min="0" value="{{ investimento.quantidade }}" required>
             </div>
              <div class="form-group">
-                <label for="valor_total">Valor Total da Operação:</label>
-                <input type="number" name="valor_total" step="0.01" min="0" value="{{ investimento.valor_total|abs }}" required>
+                <label for="valor_unitario">Valor Unitário (R$):*</label>
+                <input type="number" name="valor_unitario" step="any" min="0" value="{{ investimento.valor_unitario }}" required>
+            </div>
+             <div class="form-group">
+                <label for="valor_total">Valor Total Bruto (R$):*</label>
+                {% set valor_bruto = (investimento.quantidade * investimento.valor_unitario)|round(2) %}
+                <input type="number" name="valor_total" step="0.01" min="0" value="{{ valor_bruto }}" required>
+                 <small>Valor = Quantidade x Valor Unitário</small>
             </div>
         </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="custos">Custos/Corretagem (R$):</label>
+                <input type="number" name="custos" step="0.01" min="0" value="{{ investimento.custos or 0 }}">
+            </div>
+            <div class="form-group">
+                <label for="taxas">Taxas (B3, etc.) (R$):</label>
+                <input type="number" name="taxas" step="0.01" min="0" value="{{ investimento.taxas or 0 }}">
+            </div>
+            <div class="form-group">
+                <label for="irrf">IRRF (R$):</label>
+                <input type="number" name="irrf" step="0.01" min="0" value="{{ investimento.irrf or 0 }}">
+            </div>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+             <div class="form-group">
+                <label for="taxa_negociada">Taxa Negociada (% ou Valor):</label>
+                <input type="number" step="any" name="taxa_negociada" value="{{ investimento.taxa_negociada }}">
+            </div>
+            <div class="form-group">
+                <label for="indexador">Indexador (Renda Fixa):</label>
+                <input type="text" name="indexador" value="{{ investimento.indexador }}">
+            </div>
+        </div>
+         <div class="form-group">
+            <label for="observacao">Observação:</label>
+            <input type="text" name="observacao" value="{{ investimento.observacao }}" autocomplete="off">
+        </div>
+
         <button type="submit" class="btn btn-primary">Salvar Alterações</button>
         <a href="{{ url_for('investimentos') }}" class="btn btn-secondary">Cancelar</a>
     </form>

@@ -1,0 +1,319 @@
+{% extends "base_novo.html" %}
+
+{% block title %}Relatório de Tendências{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="{{ url_for('dashboard') }}">📊 Dashboard</a> / <span>Tendências</span>
+    </div>
+    <h1>Relatório de Tendências</h1>
+    <p>Análise de padrões e previsões baseadas no seu histórico</p>
+</div>
+
+<!-- FILTROS -->
+<div class="card">
+    <form method="GET">
+        <div class="form-grid cols-3">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Período de Análise:</label>
+                <select name="periodo" onchange="this.form.submit()">
+                    <option value="6" {% if periodo == 6 %}selected{% endif %}>Últimos 6 meses</option>
+                    <option value="12" {% if periodo == 12 %}selected{% endif %}>Últimos 12 meses</option>
+                    <option value="24" {% if periodo == 24 %}selected{% endif %}>Últimos 24 meses</option>
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Compartilhado:</label>
+                <select name="compartilhado" onchange="this.form.submit()">
+                    <option value="Todos" {% if compartilhado == 'Todos' %}selected{% endif %}>Todos</option>
+                    <option value="100% Silvia" {% if compartilhado == '100% Silvia' %}selected{% endif %}>100% Silvia</option>
+                    <option value="100% Nelson" {% if compartilhado == '100% Nelson' %}selected{% endif %}>100% Nelson</option>
+                    <option value="50/50" {% if compartilhado == '50/50' %}selected{% endif %}>50/50</option>
+                </select>
+            </div>
+        </div>
+    </form>
+</div>
+
+{% if sem_dados %}
+<!-- SEM DADOS -->
+<div class="card">
+    <div style="text-align: center; padding: 60px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">📊</div>
+        <h3 style="color: #1e293b; margin-bottom: 10px;">Dados Insuficientes</h3>
+        <p style="color: #64748b; margin-bottom: 30px;">
+            Não há movimentos suficientes para gerar análise de tendências.<br>
+            Continue cadastrando suas despesas para ver padrões e previsões!
+        </p>
+        <a href="{{ url_for('movimentos') }}" class="btn btn-primary">
+            Cadastrar Movimentos
+        </a>
+    </div>
+</div>
+
+{% else %}
+
+<!-- PREVISÕES -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; margin-bottom: 30px;">
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px;">PREVISÃO PRÓXIMO MÊS</div>
+        <div style="font-size: 28px; font-weight: 700; margin-bottom: 8px;">{{ previsao_proximo_mes }}</div>
+        <div style="font-size: 13px; opacity: 0.9;">Despesas estimadas baseadas na média</div>
+    </div>
+
+    <div class="card">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 600;">MÉDIA MENSAL</div>
+        <div style="font-size: 28px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">{{ media_mensal }}</div>
+        <div style="font-size: 13px; color: #64748b;">Últimos {{ periodo }} meses</div>
+    </div>
+
+    <div class="card">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 600;">VARIAÇÃO PADRÃO</div>
+        <div style="font-size: 28px; font-weight: 700; color: #1e293b; margin-bottom: 8px;">± {{ desvio_padrao }}</div>
+        <div style="font-size: 13px; color: #64748b;">Desvio típico mensal</div>
+    </div>
+</div>
+
+<!-- GRÁFICOS DE TENDÊNCIAS -->
+<div style="display: grid; grid-template-columns: 1fr; gap: 20px; margin-bottom: 30px;">
+    <!-- Evolução por Categoria -->
+    {% if evolucao_labels %}
+    <div class="card">
+        <div class="card-title">Evolução de Gastos por Categoria (Top 4)</div>
+        <div style="position: relative; height:300px; width:100%">
+            <canvas id="evolucaoCategorias" height="120"></canvas>
+        </div>
+    </div>
+    {% endif %}
+
+    <!-- Sazonalidade -->
+    {% if sazonalidade_labels %}
+    <div class="card">
+        <div class="card-title">Sazonalidade - Padrão de Gastos Mensal</div>
+        <div style="position: relative; height:300px; width:100%">
+            <canvas id="sazonalidadeChart" height="120"></canvas>
+        </div>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ANÁLISE POR CATEGORIA -->
+{% if top_crescimento or top_reducao %}
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-bottom: 30px;">
+    <!-- Top Crescimento -->
+    {% if top_crescimento %}
+    <div class="card">
+        <div class="card-title">📈 Categorias que Mais Cresceram</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Categoria</th>
+                    <th style="text-align: right;">Crescimento</th>
+                    <th style="text-align: right;">Mês Atual</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cat in top_crescimento %}
+                <tr>
+                    <td>{{ cat.categoria }}</td>
+                    <td style="text-align: right;"><span class="badge badge-danger">{{ cat.crescimento }}</span></td>
+                    <td style="text-align: right;">{{ cat.gasto_atual }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+
+    <!-- Top Redução -->
+    {% if top_reducao %}
+    <div class="card">
+        <div class="card-title">📉 Categorias que Mais Reduziram</div>
+        <table>
+            <thead>
+                <tr>
+                    <th>Categoria</th>
+                    <th style="text-align: right;">Redução</th>
+                    <th style="text-align: right;">Mês Atual</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for cat in top_reducao %}
+                <tr>
+                    <td>{{ cat.categoria }}</td>
+                    <td style="text-align: right;"><span class="badge badge-success">{{ cat.reducao }}</span></td>
+                    <td style="text-align: right;">{{ cat.gasto_atual }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% endif %}
+</div>
+{% endif %}
+
+<!-- COMPARATIVO ANO A ANO -->
+{% if comparativo_datasets %}
+<div class="card">
+    <div class="card-title">Comparativo Ano a Ano</div>
+    <div style="position: relative; height:300px; width:100%">
+        <canvas id="comparativoAnoChart" height="100"></canvas>
+    </div>
+</div>
+{% endif %}
+
+<!-- INSIGHTS E RECOMENDAÇÕES -->
+<div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-top: 30px;">
+    <div class="card" style="background: #f0fdf4; border-left: 4px solid #10b981;">
+        <h3 style="color: #065f46; margin-bottom: 15px; font-size: 16px;">📊 Análises Estatísticas</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+            {% for analise in analises %}
+            <li style="padding: 8px 0; border-bottom: 1px solid #d1fae5; color: #065f46;">
+                → {{ analise }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="card" style="background: #eff6ff; border-left: 4px solid #3b82f6;">
+        <h3 style="color: #1e40af; margin-bottom: 15px; font-size: 16px;">💡 Recomendações</h3>
+        <ul style="list-style: none; padding: 0; margin: 0;">
+            {% for rec in recomendacoes %}
+            <li style="padding: 8px 0; border-bottom: 1px solid #bfdbfe; color: #1e40af;">
+                → {{ rec }}
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+</div>
+
+<!-- TABELA DETALHADA -->
+{% if analise_categorias %}
+<div class="card" style="margin-top: 30px;">
+    <div class="card-title">Análise Detalhada por Categoria</div>
+    <table>
+        <thead>
+            <tr>
+                <th>Categoria</th>
+                <th style="text-align: right;">Média</th>
+                <th style="text-align: right;">Mínimo</th>
+                <th style="text-align: right;">Máximo</th>
+                <th style="text-align: right;">Variação</th>
+                <th style="text-align: right;">Tendência</th>
+                <th style="text-align: right;">Volatilidade</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for cat in analise_categorias %}
+            <tr>
+                <td>{{ cat.categoria }}</td>
+                <td style="text-align: right;">{{ cat.media }}</td>
+                <td style="text-align: right;">{{ cat.minimo }}</td>
+                <td style="text-align: right;">{{ cat.maximo }}</td>
+                <td style="text-align: right;">{{ cat.variacao }}</td>
+                <td style="text-align: right;">
+                    <span class="badge badge-{{ cat.tendencia_tipo }}">
+                        {% if cat.tendencia == 'Subindo' %}↑{% elif cat.tendencia == 'Descendo' %}↓{% endif %} {{ cat.tendencia }}
+                    </span>
+                </td>
+                <td style="text-align: right;">
+                    <span class="badge badge-{{ cat.volatilidade_tipo }}">
+                        {% if cat.volatilidade == 'Volátil' %}⚠{% endif %} {{ cat.volatilidade }}
+                    </span>
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endif %}
+
+<script>
+{% if evolucao_labels %}
+// Evolução por Categoria
+const ctx1 = document.getElementById('evolucaoCategorias').getContext('2d');
+const datasets1 = [];
+{% for dataset in evolucao_datasets %}
+datasets1.push({
+    label: '{{ dataset.label }}',
+    data: {{ dataset.data|tojson }},
+    borderColor: '{{ dataset.color }}',
+    tension: 0.4,
+    borderWidth: 2
+});
+{% endfor %}
+
+new Chart(ctx1, {
+    type: 'line',
+    data: {
+        labels: {{ evolucao_labels|tojson }},
+        datasets: datasets1
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' }
+        }
+    }
+});
+{% endif %}
+
+{% if sazonalidade_labels %}
+// Sazonalidade
+const ctx2 = document.getElementById('sazonalidadeChart').getContext('2d');
+new Chart(ctx2, {
+    type: 'bar',
+    data: {
+        labels: {{ sazonalidade_labels|tojson }},
+        datasets: [{
+            label: 'Gastos Totais',
+            data: {{ sazonalidade_valores|tojson }},
+            backgroundColor: '#667eea'
+        }]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { display: false }
+        }
+    }
+});
+{% endif %}
+
+{% if comparativo_datasets %}
+// Comparativo Ano a Ano
+const ctx3 = document.getElementById('comparativoAnoChart').getContext('2d');
+const datasets3 = [];
+{% for dataset in comparativo_datasets %}
+datasets3.push({
+    label: '{{ dataset.label }}',
+    data: {{ dataset.data|tojson }},
+    backgroundColor: '{{ dataset.color }}',
+    borderColor: '{{ dataset.color }}',
+    borderWidth: 2
+});
+{% endfor %}
+
+new Chart(ctx3, {
+    type: 'bar',
+    data: {
+        labels: {{ comparativo_labels|tojson }},
+        datasets: datasets3
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            legend: { position: 'top' }
+        }
+    }
+});
+{% endif %}
+</script>
+
+{% endif %}
+
+{% endblock %}
