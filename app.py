@@ -910,6 +910,10 @@ def relatorio_fluxo():
 # --- ROTA RELATÓRIO SALDOS BANCÁRIOS ---
 # ... (código existente sem alterações) ...
 # --- ROTA RELATÓRIO SALDOS BANCÁRIOS ---
+# ==============================================================================
+# SUBSTITUA a rota @app.route('/relatorio/saldos') no seu app.py por esta versão
+# ==============================================================================
+
 @app.route('/relatorio/saldos')
 def relatorio_saldos():
     conn = get_db_connection()
@@ -922,30 +926,43 @@ def relatorio_saldos():
         data_saldo = date.today()
         data_saldo_str = data_saldo.strftime('%Y-%m-%d')
 
-    # Query que considera movimentos E transferências
+    # Query CORRIGIDA que considera movimentos E transferências
     sql = ''' 
-        SELECT i.descricao AS instituicao, 
+        SELECT i.id, i.descricao AS instituicao, 
                (
-                   -- Saldo dos movimentos (receitas e despesas normais)
-                   COALESCE(SUM(CASE WHEN m.status = 'Efetivado' 
-                                     AND m.cartao_id IS NULL 
-                                     AND m.data_efetivacao IS NOT NULL 
-                                     AND date(m.data_efetivacao) <= ? 
-                                THEN m.valor ELSE 0 END), 0)
+                   -- 1. MOVIMENTOS: Soma receitas e despesas efetivadas (sem cartão)
+                   COALESCE(SUM(CASE 
+                       WHEN m.status = 'Efetivado' 
+                       AND m.cartao_id IS NULL 
+                       AND m.data_efetivacao IS NOT NULL 
+                       AND date(m.data_efetivacao) <= date(?) 
+                       THEN m.valor 
+                       ELSE 0 
+                   END), 0)
+                   
                    +
-                   -- Transferências RECEBIDAS (entradas)
-                   COALESCE(SUM(CASE WHEN t.status = 'Efetivado' 
-                                     AND t.conta_destino_id = i.id 
-                                     AND t.data_efetivacao IS NOT NULL
-                                     AND date(t.data_efetivacao) <= ? 
-                                THEN t.valor ELSE 0 END), 0)
+                   
+                   -- 2. TRANSFERÊNCIAS RECEBIDAS (entradas na conta)
+                   COALESCE(SUM(CASE 
+                       WHEN t.status = 'Efetivado' 
+                       AND t.conta_destino_id = i.id 
+                       AND t.data_efetivacao IS NOT NULL
+                       AND date(t.data_efetivacao) <= date(?) 
+                       THEN t.valor 
+                       ELSE 0 
+                   END), 0)
+                   
                    -
-                   -- Transferências ENVIADAS (saídas)
-                   COALESCE(SUM(CASE WHEN t.status = 'Efetivado' 
-                                     AND t.conta_origem_id = i.id 
-                                     AND t.data_efetivacao IS NOT NULL
-                                     AND date(t.data_efetivacao) <= ? 
-                                THEN t.valor ELSE 0 END), 0)
+                   
+                   -- 3. TRANSFERÊNCIAS ENVIADAS (saídas da conta)
+                   COALESCE(SUM(CASE 
+                       WHEN t.status = 'Efetivado' 
+                       AND t.conta_origem_id = i.id 
+                       AND t.data_efetivacao IS NOT NULL
+                       AND date(t.data_efetivacao) <= date(?) 
+                       THEN t.valor 
+                       ELSE 0 
+                   END), 0)
                ) AS saldo
         FROM instituicoes i
         LEFT JOIN movimentos m ON m.instituicao_id = i.id
@@ -982,6 +999,253 @@ def relatorio_saldos():
                            saldos=saldos_list,
                            data_saldo=data_saldo_str, 
                            saldo_total=saldo_total)
+# ==============================================================================
+# ADICIONE esta nova rota ao seu app.py (após as outras rotas de relatório)
+# ==============================================================================
+
+@app.route('/relatorio/extrato')
+def relatorio_extrato():
+    conn = get_db_connection()
+    
+    # Parâmetros de filtro
+    instituicao_id = request.args.get('instituicao_id', type=int)
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    
+    # Busca lista de instituições para o filtro
+    instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
+    
+    if not instituicao_id:
+        conn.close()
+        return render_template('relatorio_extrato.html', 
+                             instituicoes=instituicoes_list,
+                             movimentacoes=[],
+                             saldo_inicial=0,
+                             saldo_final=0,
+                             total_entradas=0,
+                             total_saidas=0,
+                             instituicao_selecionada=None,
+                             data_inicio=data_inicio,
+                             data_fim=data_fim)
+    
+    # Busca nome da instituição selecionada
+    instituicao_selecionada = conn.execute(
+        'SELECT descricao FROM instituicoes WHERE id = ?', 
+        (instituicao_id,)
+    ).fetchone()
+    
+    # ===== 1. CALCULA SALDO INICIAL (antes da data_inicio) =====
+    saldo_inicial = 0.0
+    if data_inicio:
+        sql_saldo_inicial = '''
+            SELECT 
+                COALESCE(SUM(CASE 
+                    WHEN m.status = 'Efetivado' 
+                    AND m.cartao_id IS NULL 
+                    AND m.data_efetivacao IS NOT NULL 
+                    AND date(m.data_efetivacao) < date(?)
+                    THEN m.valor 
+                    ELSE 0 
+                END), 0)
+                +
+                COALESCE(SUM(CASE 
+                    WHEN t.status = 'Efetivado' 
+                    AND t.conta_destino_id = ?
+                    AND t.data_efetivacao IS NOT NULL
+                    AND date(t.data_efetivacao) < date(?)
+                    THEN t.valor 
+                    ELSE 0 
+                END), 0)
+                -
+                COALESCE(SUM(CASE 
+                    WHEN t.status = 'Efetivado' 
+                    AND t.conta_origem_id = ?
+                    AND t.data_efetivacao IS NOT NULL
+                    AND date(t.data_efetivacao) < date(?)
+                    THEN t.valor 
+                    ELSE 0 
+                END), 0) as saldo
+            FROM instituicoes i
+            LEFT JOIN movimentos m ON m.instituicao_id = i.id
+            LEFT JOIN transferencias t ON (t.conta_origem_id = i.id OR t.conta_destino_id = i.id)
+            WHERE i.id = ?
+        '''
+        saldo_inicial_row = conn.execute(
+            sql_saldo_inicial, 
+            (data_inicio, instituicao_id, data_inicio, instituicao_id, data_inicio, instituicao_id)
+        ).fetchone()
+        saldo_inicial = saldo_inicial_row['saldo'] if saldo_inicial_row else 0.0
+    
+    # ===== 2. BUSCA MOVIMENTAÇÕES NO PERÍODO =====
+    
+    # 2.1 - MOVIMENTOS (receitas e despesas)
+    sql_movimentos = '''
+        SELECT 
+            m.data_efetivacao as data,
+            m.descricao,
+            'Movimento' as tipo,
+            c.descricao as categoria,
+            c.tipo as categoria_tipo,
+            m.valor,
+            m.compartilhado,
+            NULL as conta_origem,
+            NULL as conta_destino
+        FROM movimentos m
+        JOIN categorias c ON m.categoria_id = c.id
+        WHERE m.instituicao_id = ?
+        AND m.status = 'Efetivado'
+        AND m.cartao_id IS NULL
+        AND m.data_efetivacao IS NOT NULL
+    '''
+    params_mov = [instituicao_id]
+    
+    if data_inicio:
+        sql_movimentos += ' AND date(m.data_efetivacao) >= date(?)'
+        params_mov.append(data_inicio)
+    if data_fim:
+        sql_movimentos += ' AND date(m.data_efetivacao) <= date(?)'
+        params_mov.append(data_fim)
+    
+    movimentos = conn.execute(sql_movimentos, params_mov).fetchall()
+    
+    # 2.2 - TRANSFERÊNCIAS RECEBIDAS
+    sql_transf_recebidas = '''
+        SELECT 
+            t.data_efetivacao as data,
+            t.descricao,
+            'Transferência Recebida' as tipo,
+            NULL as categoria,
+            NULL as categoria_tipo,
+            t.valor,
+            t.compartilhado,
+            io.descricao as conta_origem,
+            NULL as conta_destino
+        FROM transferencias t
+        JOIN instituicoes io ON t.conta_origem_id = io.id
+        WHERE t.conta_destino_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+    '''
+    params_receb = [instituicao_id]
+    
+    if data_inicio:
+        sql_transf_recebidas += ' AND date(t.data_efetivacao) >= date(?)'
+        params_receb.append(data_inicio)
+    if data_fim:
+        sql_transf_recebidas += ' AND date(t.data_efetivacao) <= date(?)'
+        params_receb.append(data_fim)
+    
+    transf_recebidas = conn.execute(sql_transf_recebidas, params_receb).fetchall()
+    
+    # 2.3 - TRANSFERÊNCIAS ENVIADAS
+    sql_transf_enviadas = '''
+        SELECT 
+            t.data_efetivacao as data,
+            t.descricao,
+            'Transferência Enviada' as tipo,
+            NULL as categoria,
+            NULL as categoria_tipo,
+            -t.valor as valor,
+            t.compartilhado,
+            NULL as conta_origem,
+            CASE 
+                WHEN t.conta_destino_id IS NOT NULL THEN id.descricao
+                WHEN t.cartao_id IS NOT NULL THEN cc.descricao
+                ELSE 'Desconhecido'
+            END as conta_destino
+        FROM transferencias t
+        LEFT JOIN instituicoes id ON t.conta_destino_id = id.id
+        LEFT JOIN cartoes_credito cc ON t.cartao_id = cc.id
+        WHERE t.conta_origem_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+    '''
+    params_env = [instituicao_id]
+    
+    if data_inicio:
+        sql_transf_enviadas += ' AND date(t.data_efetivacao) >= date(?)'
+        params_env.append(data_inicio)
+    if data_fim:
+        sql_transf_enviadas += ' AND date(t.data_efetivacao) <= date(?)'
+        params_env.append(data_fim)
+    
+    transf_enviadas = conn.execute(sql_transf_enviadas, params_env).fetchall()
+    
+    conn.close()
+    
+    # ===== 3. UNIFICA E ORDENA TODAS AS MOVIMENTAÇÕES =====
+    todas_movimentacoes = []
+    
+    # Converte para dicionário e adiciona
+    for mov in movimentos:
+        todas_movimentacoes.append({
+            'data': mov['data'],
+            'descricao': mov['descricao'],
+            'tipo': mov['tipo'],
+            'categoria': mov['categoria'],
+            'categoria_tipo': mov['categoria_tipo'],
+            'valor': mov['valor'],
+            'compartilhado': mov['compartilhado'],
+            'origem_destino': None
+        })
+    
+    for transf in transf_recebidas:
+        todas_movimentacoes.append({
+            'data': transf['data'],
+            'descricao': transf['descricao'],
+            'tipo': transf['tipo'],
+            'categoria': None,
+            'categoria_tipo': None,
+            'valor': transf['valor'],
+            'compartilhado': transf['compartilhado'],
+            'origem_destino': f"De: {transf['conta_origem']}"
+        })
+    
+    for transf in transf_enviadas:
+        todas_movimentacoes.append({
+            'data': transf['data'],
+            'descricao': transf['descricao'],
+            'tipo': transf['tipo'],
+            'categoria': None,
+            'categoria_tipo': None,
+            'valor': transf['valor'],
+            'compartilhado': transf['compartilhado'],
+            'origem_destino': f"Para: {transf['conta_destino']}"
+        })
+    
+    # Ordena por data
+    todas_movimentacoes.sort(key=lambda x: x['data'])
+    
+    # ===== 4. CALCULA SALDO PROGRESSIVO E TOTAIS =====
+    saldo_atual = saldo_inicial
+    total_entradas = 0.0
+    total_saidas = 0.0
+    
+    for mov in todas_movimentacoes:
+        if mov['valor'] > 0:
+            total_entradas += mov['valor']
+        else:
+            total_saidas += abs(mov['valor'])
+        
+        saldo_atual += mov['valor']
+        mov['saldo_apos'] = saldo_atual
+        
+        # Formata data para exibição
+        mov['data_formatada'] = datetime.strptime(mov['data'], '%Y-%m-%d').strftime('%d/%m/%Y')
+    
+    saldo_final = saldo_atual
+    
+    return render_template('relatorio_extrato.html',
+                         instituicoes=instituicoes_list,
+                         movimentacoes=todas_movimentacoes,
+                         saldo_inicial=saldo_inicial,
+                         saldo_final=saldo_final,
+                         total_entradas=total_entradas,
+                         total_saidas=total_saidas,
+                         instituicao_selecionada=instituicao_selecionada['descricao'] if instituicao_selecionada else None,
+                         instituicao_id=instituicao_id,
+                         data_inicio=data_inicio,
+                         data_fim=data_fim)
 
 # --- ROTAS PLACEHOLDER para Dashboards e Relatórios Futuros ---
 @app.route('/dashboard')

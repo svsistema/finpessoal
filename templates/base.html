@@ -474,6 +474,10 @@
                     <span class="menu-icon">🏦</span>
                     <span>Saldos Bancários</span> {# Nome completo #}
                 </a>
+                <a href="{{ url_for('relatorio_extrato') }}" class="menu-item {% if request.endpoint == 'relatorio_extrato' %}active{% endif %}">
+                    <span class="menu-icon">📋</span>
+                    <span>Extrato Bancário</span>
+                </a>
                 <a href="{{ url_for('relatorio_tendencias') }}" class="menu-item {% if request.endpoint == 'relatorio_tendencias' %}active{% endif %}">
                     <span class="menu-icon">📊</span>
                     <span>Tendências</span>

@@ -1,0 +1,203 @@
+{% extends "base.html" %}
+
+{% block title %}Extrato Bancário Completo{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <div class="breadcrumb">
+        <a href="{{ url_for('dashboard') }}">📊 Dashboard</a> / <span>Extrato Bancário</span>
+    </div>
+    <h1>Extrato Bancário Completo</h1>
+    <p>Movimentações consolidadas: receitas, despesas e transferências</p>
+</div>
+
+<!-- FILTROS -->
+<div class="card">
+    <form method="GET">
+        <div class="form-grid cols-4">
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Conta Bancária:*</label>
+                <select name="instituicao_id" required onchange="this.form.submit()">
+                    <option value="">-- Selecione uma conta --</option>
+                    {% for inst in instituicoes %}
+                    <option value="{{ inst.id }}" {% if inst.id == instituicao_id %}selected{% endif %}>
+                        {{ inst.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Data Início:</label>
+                <input type="date" name="data_inicio" value="{{ data_inicio or '' }}">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+                <label>Data Fim:</label>
+                <input type="date" name="data_fim" value="{{ data_fim or '' }}">
+            </div>
+            <button type="submit" class="btn btn-primary" style="align-self: end;">Filtrar</button>
+        </div>
+    </form>
+</div>
+
+{% if instituicao_selecionada %}
+<!-- RESUMO DO EXTRATO -->
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 30px;">
+    <div class="card">
+        <div style="font-size: 13px; color: #64748b; margin-bottom: 8px; font-weight: 600;">SALDO INICIAL</div>
+        <div style="font-size: 28px; font-weight: 700; color: {% if saldo_inicial >= 0 %}#10b981{% else %}#ef4444{% endif %}; margin-bottom: 8px;">
+            {{ format_brl(saldo_inicial) }}
+        </div>
+        <div style="font-size: 13px; color: #64748b;">
+            {% if data_inicio %}Em {{ data_inicio|replace('-', '/') }}{% else %}Desde o início{% endif %}
+        </div>
+    </div>
+
+    <div class="card" style="background: #f0fdf4; border-left: 4px solid #10b981;">
+        <div style="font-size: 13px; color: #065f46; margin-bottom: 8px; font-weight: 600;">ENTRADAS</div>
+        <div style="font-size: 28px; font-weight: 700; color: #10b981; margin-bottom: 8px;">
+            {{ format_brl(total_entradas) }}
+        </div>
+        <div style="font-size: 13px; color: #065f46;">Receitas + Transf. Recebidas</div>
+    </div>
+
+    <div class="card" style="background: #fef2f2; border-left: 4px solid #ef4444;">
+        <div style="font-size: 13px; color: #991b1b; margin-bottom: 8px; font-weight: 600;">SAÍDAS</div>
+        <div style="font-size: 28px; font-weight: 700; color: #ef4444; margin-bottom: 8px;">
+            {{ format_brl(total_saidas) }}
+        </div>
+        <div style="font-size: 13px; color: #991b1b;">Despesas + Transf. Enviadas</div>
+    </div>
+
+    <div class="card" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white;">
+        <div style="font-size: 13px; opacity: 0.9; margin-bottom: 8px; font-weight: 600;">SALDO FINAL</div>
+        <div style="font-size: 28px; font-weight: 700; margin-bottom: 8px;">
+            {{ format_brl(saldo_final) }}
+        </div>
+        <div style="font-size: 13px; opacity: 0.9;">
+            {% if data_fim %}Em {{ data_fim|replace('-', '/') }}{% else %}Hoje{% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- TABELA DE MOVIMENTAÇÕES -->
+<div class="card">
+    <div class="card-title">
+        Extrato: {{ instituicao_selecionada }}
+        {% if data_inicio and data_fim %}
+            ({{ data_inicio|replace('-', '/') }} a {{ data_fim|replace('-', '/') }})
+        {% elif data_inicio %}
+            (A partir de {{ data_inicio|replace('-', '/') }})
+        {% elif data_fim %}
+            (Até {{ data_fim|replace('-', '/') }})
+        {% else %}
+            (Todas as movimentações)
+        {% endif %}
+    </div>
+
+    {% if movimentacoes %}
+    <div class="table-container">
+        <table>
+            <thead>
+                <tr>
+                    <th style="width: 10%;">Data</th>
+                    <th style="width: 25%;">Descrição</th>
+                    <th style="width: 15%;">Tipo</th>
+                    <th style="width: 12%;">Categoria</th>
+                    <th style="width: 15%;">Detalhes</th>
+                    <th style="width: 8%; text-align: center;">Comp.</th>
+                    <th style="width: 10%; text-align: right;">Valor</th>
+                    <th style="width: 15%; text-align: right;">Saldo</th>
+                </tr>
+            </thead>
+            <tbody>
+                <!-- Linha de Saldo Inicial -->
+                <tr style="background: #f8fafc; font-weight: 600;">
+                    <td colspan="6"><strong>SALDO INICIAL</strong></td>
+                    <td style="text-align: right;">—</td>
+                    <td style="text-align: right; color: {% if saldo_inicial >= 0 %}#10b981{% else %}#ef4444{% endif %};">
+                        <strong>{{ format_brl(saldo_inicial) }}</strong>
+                    </td>
+                </tr>
+
+                <!-- Movimentações -->
+                {% for mov in movimentacoes %}
+                <tr>
+                    <td>{{ mov.data_formatada }}</td>
+                    <td>{{ mov.descricao }}</td>
+                    <td>
+                        {% if mov.tipo == 'Movimento' %}
+                            <span class="badge badge-gray">{{ mov.categoria_tipo }}</span>
+                        {% elif mov.tipo == 'Transferência Recebida' %}
+                            <span class="badge badge-success">↓ Recebida</span>
+                        {% else %}
+                            <span class="badge badge-warning">↑ Enviada</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ mov.categoria or '—' }}</td>
+                    <td style="font-size: 12px; color: #64748b;">
+                        {{ mov.origem_destino or '—' }}
+                    </td>
+                    <td style="text-align: center; font-size: 11px;">
+                        {% if mov.compartilhado == '100% Silvia' %}
+                            👩 S
+                        {% elif mov.compartilhado == '100% Nelson' %}
+                            👨 N
+                        {% else %}
+                            👥 50/50
+                        {% endif %}
+                    </td>
+                    <td style="text-align: right; font-weight: 600; color: {% if mov.valor > 0 %}#10b981{% else %}#ef4444{% endif %};">
+                        {% if mov.valor > 0 %}+{% endif %}{{ format_brl(mov.valor) }}
+                    </td>
+                    <td style="text-align: right; font-weight: 600; color: {% if mov.saldo_apos >= 0 %}#1e293b{% else %}#ef4444{% endif %};">
+                        {{ format_brl(mov.saldo_apos) }}
+                    </td>
+                </tr>
+                {% endfor %}
+
+                <!-- Linha de Saldo Final -->
+                <tr style="background: #f8fafc; font-weight: 600; border-top: 2px solid #cbd5e1;">
+                    <td colspan="6"><strong>SALDO FINAL</strong></td>
+                    <td style="text-align: right;">—</td>
+                    <td style="text-align: right; color: {% if saldo_final >= 0 %}#10b981{% else %}#ef4444{% endif %};">
+                        <strong>{{ format_brl(saldo_final) }}</strong>
+                    </td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <div style="text-align: center; padding: 40px; color: #64748b;">
+        <div style="font-size: 48px; margin-bottom: 20px;">📋</div>
+        <p>Nenhuma movimentação encontrada para o período selecionado.</p>
+    </div>
+    {% endif %}
+</div>
+
+<!-- LEGENDA -->
+<div class="alert alert-info" style="margin-top: 30px;">
+    <strong>ℹ️ Como ler este extrato:</strong>
+    <ul style="margin: 10px 0 0 20px;">
+        <li><strong>Movimentos (Receita/Despesa):</strong> Valores em verde/vermelho são receitas e despesas cadastradas em "Movimentos"</li>
+        <li><strong>Transferências Recebidas:</strong> Dinheiro que ENTROU nesta conta vindo de outra conta</li>
+        <li><strong>Transferências Enviadas:</strong> Dinheiro que SAIU desta conta para outra conta ou cartão</li>
+        <li><strong>Saldo:</strong> Mostra o saldo acumulado após cada operação</li>
+        <li><strong>Compartilhado:</strong> 👩 = 100% Silvia | 👨 = 100% Nelson | 👥 = 50/50</li>
+    </ul>
+</div>
+
+{% else %}
+<!-- MENSAGEM INICIAL -->
+<div class="card">
+    <div style="text-align: center; padding: 60px;">
+        <div style="font-size: 48px; margin-bottom: 20px;">🏦</div>
+        <h3 style="color: #1e293b; margin-bottom: 10px;">Selecione uma Conta</h3>
+        <p style="color: #64748b;">
+            Escolha uma conta bancária no filtro acima para visualizar o extrato completo<br>
+            com todas as receitas, despesas e transferências.
+        </p>
+    </div>
+</div>
+{% endif %}
+
+{% endblock %}
