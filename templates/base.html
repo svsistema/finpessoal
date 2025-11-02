@@ -454,6 +454,10 @@
                     <span class="menu-icon">💸</span>
                     <span>Movimentos</span>
                 </a>
+                <a href="{{ url_for('transferencias') }}" class="menu-item {% if request.endpoint in ['transferencias', 'add_transferencia', 'edit_transferencia'] %}active{% endif %}">
+                    <span class="menu-icon">🔄</span>
+                    <span>Transferências</span>
+                </a>
                 <a href="{{ url_for('investimentos') }}" class="menu-item {% if request.endpoint in ['investimentos', 'add_investimento', 'edit_investimento'] %}active{% endif %}">
                     <span class="menu-icon">💹</span>
                     <span>Lançar Invest.</span> {# Nome mais claro #}

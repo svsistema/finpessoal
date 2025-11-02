@@ -1,0 +1,127 @@
+{% extends "base.html" %}
+
+{% block title %}Editar Transferência{% endblock %}
+
+{% block content %}
+    <h2>Editar Transferência/Pagamento</h2>
+
+    <form method="POST">
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="data_transferencia">Data da Transferência:</label>
+                <input type="date" name="data_transferencia" value="{{ transferencia.data_transferencia }}" required>
+            </div>
+            <div class="form-group">
+                <label for="data_efetivacao">Data de Efetivação (opcional):</label>
+                <input type="date" name="data_efetivacao" value="{{ transferencia.data_efetivacao or '' }}">
+            </div>
+        </div>
+        
+        <div class="form-group">
+            <label for="tipo_transferencia">Tipo de Operação:*</label>
+            <select name="tipo_transferencia" id="tipo_transferencia" required onchange="alterarTipoTransferencia()">
+                <option value="Entre Contas" {% if transferencia.tipo_transferencia == 'Entre Contas' %}selected{% endif %}>Transferência Entre Contas</option>
+                <option value="Pagamento Fatura" {% if transferencia.tipo_transferencia == 'Pagamento Fatura' %}selected{% endif %}>Pagamento de Fatura de Cartão</option>
+                <option value="Para Investimento" {% if transferencia.tipo_transferencia == 'Para Investimento' %}selected{% endif %}>Aplicação em Investimento</option>
+                <option value="De Investimento" {% if transferencia.tipo_transferencia == 'De Investimento' %}selected{% endif %}>Resgate de Investimento</option>
+            </select>
+        </div>
+        
+        <div class="form-group">
+            <label for="descricao">Descrição:</label>
+            <input type="text" name="descricao" value="{{ transferencia.descricao }}" required autocomplete="off">
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="conta_origem_id">Conta de Origem:*</label>
+                <select name="conta_origem_id" required>
+                    {% for inst in instituicoes %}
+                    <option value="{{ inst.id }}" {% if inst.id == transferencia.conta_origem_id %}selected{% endif %}>
+                        {{ inst.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group" id="div_conta_destino">
+                <label for="conta_destino_id">Conta de Destino:*</label>
+                <select name="conta_destino_id" id="conta_destino_id">
+                    <option value="">-- Selecione --</option>
+                    {% for inst in instituicoes %}
+                    <option value="{{ inst.id }}" {% if inst.id == transferencia.conta_destino_id %}selected{% endif %}>
+                        {{ inst.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group" id="div_cartao" style="display: none;">
+                <label for="cartao_id">Cartão de Crédito:*</label>
+                <select name="cartao_id" id="cartao_id">
+                    <option value="">-- Selecione --</option>
+                    {% for cartao in cartoes %}
+                    <option value="{{ cartao.id }}" {% if cartao.id == transferencia.cartao_id %}selected{% endif %}>
+                        {{ cartao.descricao }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="valor">Valor (R$):*</label>
+                <input type="number" name="valor" step="0.01" min="0.01" value="{{ transferencia.valor }}" required>
+            </div>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+            <div class="form-group">
+                <label for="status">Status:*</label>
+                <select name="status" required>
+                    <option value="Pendente" {% if transferencia.status == 'Pendente' %}selected{% endif %}>Pendente</option>
+                    <option value="Efetivado" {% if transferencia.status == 'Efetivado' %}selected{% endif %}>Efetivado</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="compartilhado">Compartilhado:*</label>
+                <select name="compartilhado" required>
+                    <option value="100% Silvia" {% if transferencia.compartilhado == '100% Silvia' %}selected{% endif %}>100% Silvia</option>
+                    <option value="100% Nelson" {% if transferencia.compartilhado == '100% Nelson' %}selected{% endif %}>100% Nelson</option>
+                    <option value="50/50" {% if transferencia.compartilhado == '50/50' %}selected{% endif %}>50/50</option>
+                </select>
+            </div>
+        </div>
+        
+        <button type="submit" class="btn btn-primary">Salvar Alterações</button>
+        <a href="{{ url_for('transferencias') }}" class="btn btn-secondary">Cancelar</a>
+    </form>
+
+    <script>
+        function alterarTipoTransferencia() {
+            const tipo = document.getElementById('tipo_transferencia').value;
+            const divContaDestino = document.getElementById('div_conta_destino');
+            const divCartao = document.getElementById('div_cartao');
+            const contaDestinoSelect = document.getElementById('conta_destino_id');
+            const cartaoSelect = document.getElementById('cartao_id');
+            
+            // Reset
+            contaDestinoSelect.removeAttribute('required');
+            cartaoSelect.removeAttribute('required');
+            
+            if (tipo === 'Pagamento Fatura') {
+                divContaDestino.style.display = 'none';
+                divCartao.style.display = 'block';
+                cartaoSelect.setAttribute('required', 'required');
+            } else {
+                divContaDestino.style.display = 'block';
+                divCartao.style.display = 'none';
+                contaDestinoSelect.setAttribute('required', 'required');
+            }
+        }
+        
+        // Executa ao carregar a página para mostrar os campos corretos
+        document.addEventListener('DOMContentLoaded', function() {
+            alterarTipoTransferencia();
+        });
+    </script>
+{% endblock %}

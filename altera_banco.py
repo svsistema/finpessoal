@@ -1,37 +1,60 @@
 import sqlite3
-import sys # Para mensagens de erro
+import sys
 
 DATABASE = 'financas.db'
 
-# Lista de colunas a adicionar
-# Cada item é uma tupla: (nome_coluna, tipo_coluna, [default_se_necessario])
-colunas_para_adicionar = [
-    ('custos', 'REAL', 'DEFAULT 0'),
-    ('taxas', 'REAL', 'DEFAULT 0'),
-    ('irrf', 'REAL', 'DEFAULT 0'),
-    ('valor_unitario', 'REAL', 'DEFAULT 0'),
-    ('instituicao_id', 'INTEGER', 'REFERENCES instituicoes(id)'), # Chave estrangeira
-    ('taxa_negociada', 'REAL', None), # Sem default
-    ('indexador', 'TEXT', None),
-    ('observacao', 'TEXT', None)
-]
-
 print(f"Tentando conectar ao banco de dados: {DATABASE}")
-conn = None # Inicializa conn como None
+conn = None
+
 try:
     conn = sqlite3.connect(DATABASE)
     cursor = conn.cursor()
     print("Conectado com sucesso.")
 
-    # Habilita chaves estrangeiras (boa prática)
     cursor.execute("PRAGMA foreign_keys = ON;")
 
-    print("\n--- Adicionando colunas à tabela 'investimentos' ---")
+    # ===== CRIA TABELA DE TRANSFERÊNCIAS =====
+    print("\n--- Criando tabela 'transferencias' ---")
+    
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS transferencias (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        data_transferencia TEXT NOT NULL,
+        data_efetivacao TEXT,
+        descricao TEXT NOT NULL,
+        conta_origem_id INTEGER NOT NULL,
+        conta_destino_id INTEGER,
+        cartao_id INTEGER,
+        valor REAL NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('Pendente', 'Efetivado')),
+        tipo_transferencia TEXT NOT NULL CHECK(tipo_transferencia IN ('Entre Contas', 'Para Investimento', 'De Investimento', 'Pagamento Fatura')),
+        investimento_id INTEGER,
+        compartilhado TEXT NOT NULL CHECK(compartilhado IN ('100% Silvia', '100% Nelson', '50/50')),
+        FOREIGN KEY (conta_origem_id) REFERENCES instituicoes (id),
+        FOREIGN KEY (conta_destino_id) REFERENCES instituicoes (id),
+        FOREIGN KEY (cartao_id) REFERENCES cartoes_credito (id),
+        FOREIGN KEY (investimento_id) REFERENCES investimentos (id)
+    );
+    ''')
+    print("Tabela 'transferencias' criada/verificada com sucesso.")
 
-    # Verifica as colunas existentes para evitar erros
+    # ===== ADICIONA COLUNAS AOS INVESTIMENTOS (se ainda não tiver) =====
+    print("\n--- Verificando colunas da tabela 'investimentos' ---")
+    
     cursor.execute("PRAGMA table_info(investimentos);")
     colunas_existentes = [col[1] for col in cursor.fetchall()]
     print(f"Colunas existentes: {colunas_existentes}")
+
+    colunas_para_adicionar = [
+        ('custos', 'REAL', 'DEFAULT 0'),
+        ('taxas', 'REAL', 'DEFAULT 0'),
+        ('irrf', 'REAL', 'DEFAULT 0'),
+        ('valor_unitario', 'REAL', 'DEFAULT 0'),
+        ('instituicao_id', 'INTEGER', 'REFERENCES instituicoes(id)'),
+        ('taxa_negociada', 'REAL', None),
+        ('indexador', 'TEXT', None),
+        ('observacao', 'TEXT', None)
+    ]
 
     for coluna_info in colunas_para_adicionar:
         nome_coluna = coluna_info[0]
@@ -50,17 +73,11 @@ try:
                 print(f"Executando: {sql}")
                 cursor.execute(sql)
                 print(f"Coluna '{nome_coluna}' adicionada com sucesso.")
-                colunas_existentes.append(nome_coluna) # Adiciona à lista para próxima verificação
             except sqlite3.Error as e:
-                # Verifica se o erro é "duplicate column name"
                 if "duplicate column name" in str(e).lower():
-                     print(f"Aviso: Coluna '{nome_coluna}' já existia (erro ignorado): {e}")
-                     if nome_coluna not in colunas_existentes: # Garante que está na lista
-                         colunas_existentes.append(nome_coluna)
+                    print(f"Aviso: Coluna '{nome_coluna}' já existia: {e}")
                 else:
                     print(f"!!! ERRO ao adicionar coluna '{nome_coluna}': {e}", file=sys.stderr)
-                    # Decide se quer parar ou continuar
-                    # raise e # Descomente esta linha se quiser parar a execução em caso de erro
 
     print("\n--- Alterações concluídas ---")
     conn.commit()
@@ -69,7 +86,7 @@ try:
 except sqlite3.Error as e:
     print(f"!!! ERRO GERAL de banco de dados: {e}", file=sys.stderr)
     if conn:
-        conn.rollback() # Desfaz qualquer alteração parcial
+        conn.rollback()
         print("Rollback realizado.")
 except Exception as e:
     print(f"!!! ERRO INESPERADO: {e}", file=sys.stderr)
@@ -81,4 +98,4 @@ finally:
         conn.close()
         print("Conexão com o banco de dados fechada.")
     else:
-         print("Não foi possível conectar ao banco de dados.")
+        print("Não foi possível conectar ao banco de dados.")

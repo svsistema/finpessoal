@@ -909,38 +909,79 @@ def relatorio_fluxo():
 
 # --- ROTA RELATÓRIO SALDOS BANCÁRIOS ---
 # ... (código existente sem alterações) ...
+# --- ROTA RELATÓRIO SALDOS BANCÁRIOS ---
 @app.route('/relatorio/saldos')
 def relatorio_saldos():
     conn = get_db_connection()
     data_saldo_str = request.args.get('data_saldo', date.today().strftime('%Y-%m-%d'))
-    try: data_saldo = datetime.strptime(data_saldo_str, '%Y-%m-%d').date()
+    
+    try: 
+        data_saldo = datetime.strptime(data_saldo_str, '%Y-%m-%d').date()
     except ValueError:
-        flash("Data inválida.", 'error'); data_saldo = date.today()
+        flash("Data inválida.", 'error')
+        data_saldo = date.today()
         data_saldo_str = data_saldo.strftime('%Y-%m-%d')
 
-    sql = ''' SELECT i.descricao AS instituicao, SUM(m.valor) AS saldo
-              FROM movimentos m JOIN instituicoes i ON m.instituicao_id = i.id
-              WHERE m.status = 'Efetivado' AND m.cartao_id IS NULL
-                AND m.data_efetivacao IS NOT NULL AND date(m.data_efetivacao) <= ?
-              GROUP BY i.descricao '''
-    params = [data_saldo_str]
+    # Query que considera movimentos E transferências
+    sql = ''' 
+        SELECT i.descricao AS instituicao, 
+               (
+                   -- Saldo dos movimentos (receitas e despesas normais)
+                   COALESCE(SUM(CASE WHEN m.status = 'Efetivado' 
+                                     AND m.cartao_id IS NULL 
+                                     AND m.data_efetivacao IS NOT NULL 
+                                     AND date(m.data_efetivacao) <= ? 
+                                THEN m.valor ELSE 0 END), 0)
+                   +
+                   -- Transferências RECEBIDAS (entradas)
+                   COALESCE(SUM(CASE WHEN t.status = 'Efetivado' 
+                                     AND t.conta_destino_id = i.id 
+                                     AND t.data_efetivacao IS NOT NULL
+                                     AND date(t.data_efetivacao) <= ? 
+                                THEN t.valor ELSE 0 END), 0)
+                   -
+                   -- Transferências ENVIADAS (saídas)
+                   COALESCE(SUM(CASE WHEN t.status = 'Efetivado' 
+                                     AND t.conta_origem_id = i.id 
+                                     AND t.data_efetivacao IS NOT NULL
+                                     AND date(t.data_efetivacao) <= ? 
+                                THEN t.valor ELSE 0 END), 0)
+               ) AS saldo
+        FROM instituicoes i
+        LEFT JOIN movimentos m ON m.instituicao_id = i.id
+        LEFT JOIN transferencias t ON (t.conta_origem_id = i.id OR t.conta_destino_id = i.id)
+        GROUP BY i.descricao, i.id
+        ORDER BY i.descricao
+    '''
+    
+    params = [data_saldo_str, data_saldo_str, data_saldo_str]
     saldos_list = []
     saldo_total = 0.0
+    
     try:
         saldos_calculados = conn.execute(sql, params).fetchall()
-        instituicoes_todas = conn.execute("SELECT descricao FROM instituicoes ORDER BY descricao").fetchall()
         conn.close()
-        saldos_dict = {s['instituicao']: s['saldo'] for s in saldos_calculados}
-        for inst in instituicoes_todas:
-             saldo = saldos_dict.get(inst['descricao'], 0.0)
-             saldos_list.append({'instituicao': inst['descricao'], 'saldo': saldo})
-             saldo_total += saldo
+        
+        # Monta a lista final com todos os bancos
+        for saldo_row in saldos_calculados:
+            saldo = saldo_row['saldo']
+            saldos_list.append({
+                'instituicao': saldo_row['instituicao'], 
+                'saldo': saldo
+            })
+            saldo_total += saldo
+            
     except Exception as e:
-        if conn: conn.close(); flash(f"Erro: {e}", "error")
-        saldos_list = []; saldo_total = 0.0
+        if conn: 
+            conn.close()
+        flash(f"Erro ao calcular saldos: {e}", "error")
+        saldos_list = []
+        saldo_total = 0.0
 
-    return render_template('relatorio_saldos.html', saldos=saldos_list,
-                           data_saldo=data_saldo_str, saldo_total=saldo_total)
+    return render_template('relatorio_saldos.html', 
+                           saldos=saldos_list,
+                           data_saldo=data_saldo_str, 
+                           saldo_total=saldo_total)
 
 # --- ROTAS PLACEHOLDER para Dashboards e Relatórios Futuros ---
 @app.route('/dashboard')
@@ -1544,9 +1585,386 @@ def relatorio_tendencias():
     
     return render_template('relatorio_tendencias.html', **dados)
 
+# --- ROTAS TRANSFERÊNCIAS ---
+@app.route('/transferencias', methods=['GET'])
+def transferencias():
+    conn = get_db_connection()
+    
+    # Buscar transferências com joins
+    transferencias_list = conn.execute('''
+        SELECT 
+            t.*,
+            strftime('%d/%m/%Y', t.data_transferencia) as data_transf_formatada,
+            strftime('%d/%m/%Y', t.data_efetivacao) as data_efet_formatada,
+            i1.descricao as conta_origem_nome,
+            i2.descricao as conta_destino_nome,
+            cc.descricao as cartao_nome,
+            inv.id as investimento_ticker
+        FROM transferencias t
+        JOIN instituicoes i1 ON t.conta_origem_id = i1.id
+        LEFT JOIN instituicoes i2 ON t.conta_destino_id = i2.id
+        LEFT JOIN cartoes_credito cc ON t.cartao_id = cc.id
+        LEFT JOIN investimentos inv ON t.investimento_id = inv.id
+        ORDER BY t.data_transferencia DESC, t.id DESC
+    ''').fetchall()
+    
+    instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
+    cartoes_list = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
+    conn.close()
+    
+    return render_template('transferencias.html', 
+                         transferencias=transferencias_list,
+                         instituicoes=instituicoes_list,
+                         cartoes=cartoes_list)
+
+@app.route('/transferencias/add', methods=['POST'])
+def add_transferencia():
+    conn = get_db_connection()
+    
+    data_transferencia = request.form.get('data_transferencia')
+    data_efetivacao = request.form.get('data_efetivacao') or None
+    descricao = request.form.get('descricao')
+    conta_origem_id = request.form.get('conta_origem_id')
+    conta_destino_id = request.form.get('conta_destino_id') or None
+    cartao_id = request.form.get('cartao_id') or None
+    valor_str = request.form.get('valor')
+    status = request.form.get('status')
+    tipo_transferencia = request.form.get('tipo_transferencia')
+    compartilhado = request.form.get('compartilhado')
+    
+    # Validações básicas
+    if not all([data_transferencia, descricao, conta_origem_id, valor_str, status, tipo_transferencia, compartilhado]):
+        flash('Todos os campos obrigatórios devem ser preenchidos.', 'error')
+        return redirect(url_for('transferencias'))
+    
+    # Validação específica por tipo
+    if tipo_transferencia == 'Pagamento Fatura':
+        if not cartao_id:
+            flash('Para pagamento de fatura, selecione o cartão.', 'error')
+            return redirect(url_for('transferencias'))
+    else:
+        if not conta_destino_id:
+            flash('Para este tipo de transferência, selecione a conta de destino.', 'error')
+            return redirect(url_for('transferencias'))
+        
+        if conta_origem_id == conta_destino_id:
+            flash('Conta de origem e destino não podem ser iguais.', 'error')
+            return redirect(url_for('transferencias'))
+    
+    try:
+        valor = float(valor_str)
+    except ValueError:
+        flash('Valor inválido.', 'error')
+        return redirect(url_for('transferencias'))
+    
+    if status == 'Efetivado' and not data_efetivacao:
+        data_efetivacao = data_transferencia
+    
+    try:
+        conn.execute('''
+            INSERT INTO transferencias 
+            (data_transferencia, data_efetivacao, descricao, conta_origem_id, conta_destino_id, 
+             cartao_id, valor, status, tipo_transferencia, compartilhado)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ''', (data_transferencia, data_efetivacao, descricao, conta_origem_id, conta_destino_id,
+              cartao_id, valor, status, tipo_transferencia, compartilhado))
+        
+        conn.commit()
+        flash('Transferência cadastrada com sucesso!', 'success')
+    except sqlite3.Error as e:
+        flash(f'Erro ao cadastrar transferência: {e}', 'error')
+    finally:
+        conn.close()
+    
+    return redirect(url_for('transferencias'))
+
+@app.route('/transferencias/edit/<int:id>', methods=['GET', 'POST'])
+def edit_transferencia(id):
+    conn = get_db_connection()
+    
+    if request.method == 'POST':
+        data_transferencia = request.form.get('data_transferencia')
+        data_efetivacao = request.form.get('data_efetivacao') or None
+        descricao = request.form.get('descricao')
+        conta_origem_id = request.form.get('conta_origem_id')
+        conta_destino_id = request.form.get('conta_destino_id') or None
+        cartao_id = request.form.get('cartao_id') or None
+        valor_str = request.form.get('valor')
+        status = request.form.get('status')
+        tipo_transferencia = request.form.get('tipo_transferencia')
+        compartilhado = request.form.get('compartilhado')
+        
+        # Validação específica por tipo
+        if tipo_transferencia == 'Pagamento Fatura':
+            if not cartao_id:
+                flash('Para pagamento de fatura, selecione o cartão.', 'error')
+                return redirect(url_for('edit_transferencia', id=id))
+        else:
+            if not conta_destino_id:
+                flash('Para este tipo de transferência, selecione a conta de destino.', 'error')
+                return redirect(url_for('edit_transferencia', id=id))
+            
+            if conta_origem_id == conta_destino_id:
+                flash('Conta de origem e destino não podem ser iguais.', 'error')
+                return redirect(url_for('edit_transferencia', id=id))
+        
+        try:
+            valor = float(valor_str)
+        except ValueError:
+            flash('Valor inválido.', 'error')
+            return redirect(url_for('edit_transferencia', id=id))
+        
+        if status == 'Efetivado' and not data_efetivacao:
+            data_efetivacao = data_transferencia
+        
+        conn.execute('''
+            UPDATE transferencias 
+            SET data_transferencia = ?, data_efetivacao = ?, descricao = ?, 
+                conta_origem_id = ?, conta_destino_id = ?, cartao_id = ?, valor = ?, 
+                status = ?, tipo_transferencia = ?, compartilhado = ?
+            WHERE id = ?
+        ''', (data_transferencia, data_efetivacao, descricao, conta_origem_id, conta_destino_id,
+              cartao_id, valor, status, tipo_transferencia, compartilhado, id))
+        
+        conn.commit()
+        conn.close()
+        return redirect(url_for('transferencias'))
+    
+    transferencia = conn.execute('SELECT * FROM transferencias WHERE id = ?', (id,)).fetchone()
+    instituicoes_list = conn.execute('SELECT * FROM instituicoes ORDER BY descricao').fetchall()
+    cartoes_list = conn.execute('SELECT * FROM cartoes_credito ORDER BY descricao').fetchall()
+    conn.close()
+    
+    if not transferencia:
+        return redirect(url_for('transferencias'))
+    
+    return render_template('editar_transferencia.html', 
+                         transferencia=transferencia,
+                         instituicoes=instituicoes_list,
+                         cartoes=cartoes_list)
+
+@app.route('/transferencias/delete/<int:id>', methods=['POST'])
+def delete_transferencia(id):
+    conn = get_db_connection()
+    try:
+        conn.execute('DELETE FROM transferencias WHERE id = ?', (id,))
+        conn.commit()
+        flash('Transferência excluída.', 'success')
+    except sqlite3.Error as e:
+        flash(f'Erro ao excluir: {e}', 'error')
+    finally:
+        conn.close()
+    return redirect(url_for('transferencias'))
+
 @app.route('/relatorio/cartoes')
 def relatorio_cartoes():
-    return render_template('relatorio_cartoes.html', title="Análise de Cartões de Crédito")
+    conn = get_db_connection()
+    
+    # Parâmetros de filtro
+    mes_referencia = request.args.get('mes', datetime.now().strftime('%Y-%m'))
+    compartilhado = request.args.get('compartilhado', 'Todos')
+    
+    # Converte mês para data início e fim
+    try:
+        data_inicio = f"{mes_referencia}-01"
+        ano, mes = mes_referencia.split('-')
+        # Último dia do mês
+        if int(mes) == 12:
+            data_fim = f"{int(ano)+1}-01-01"
+        else:
+            data_fim = f"{ano}-{int(mes)+1:02d}-01"
+    except:
+        # Usa mês atual se formato inválido
+        mes_referencia = datetime.now().strftime('%Y-%m')
+        data_inicio = f"{mes_referencia}-01"
+        hoje = datetime.now()
+        if hoje.month == 12:
+            data_fim = f"{hoje.year+1}-01-01"
+        else:
+            data_fim = f"{hoje.year}-{hoje.month+1:02d}-01"
+    
+    # Filtro de compartilhado
+    where_compartilhado = "" if compartilhado == 'Todos' else f"AND m.compartilhado = '{compartilhado}'"
+    
+    # ===== 1. BUSCAR CARTÕES =====
+    cartoes_list = conn.execute('''
+        SELECT 
+            c.id, c.descricao, c.vencimento, c.limite,
+            i.descricao as banco
+        FROM cartoes_credito c
+        JOIN instituicoes i ON c.instituicao_id = i.id
+        ORDER BY c.descricao
+    ''').fetchall()
+    
+    # ===== 2. CALCULAR GASTOS POR CARTÃO NO MÊS =====
+    gastos_cartoes = {}
+    total_gasto_mes = 0.0
+    
+    for cartao in cartoes_list:
+        sql_gastos = f'''
+            SELECT COALESCE(SUM(ABS(m.valor)), 0) as total
+            FROM movimentos m
+            WHERE m.cartao_id = ?
+            AND m.data_movimento >= ?
+            AND m.data_movimento < ?
+            {where_compartilhado}
+        '''
+        
+        gasto = conn.execute(sql_gastos, (cartao['id'], data_inicio, data_fim)).fetchone()['total']
+        gastos_cartoes[cartao['id']] = gasto
+        total_gasto_mes += gasto
+    
+    # ===== 3. CALCULAR PAGAMENTOS DO MÊS =====
+    pagamentos_cartoes = {}
+    
+    for cartao in cartoes_list:
+        sql_pagamentos = f'''
+            SELECT COALESCE(SUM(t.valor), 0) as total
+            FROM transferencias t
+            WHERE t.cartao_id = ?
+            AND t.tipo_transferencia = 'Pagamento Fatura'
+            AND t.status = 'Efetivado'
+            AND t.data_efetivacao >= ?
+            AND t.data_efetivacao < ?
+            {where_compartilhado.replace('m.', 't.')}
+        '''
+        
+        pagamento = conn.execute(sql_pagamentos, (cartao['id'], data_inicio, data_fim)).fetchone()['total']
+        pagamentos_cartoes[cartao['id']] = pagamento
+    
+    # ===== 4. MONTAR DADOS DOS CARTÕES =====
+    limite_total = sum([c['limite'] for c in cartoes_list])
+    disponivel_total = limite_total - total_gasto_mes
+    utilizacao_media = (total_gasto_mes / limite_total * 100) if limite_total > 0 else 0
+    
+    cartoes_dados = []
+    for cartao in cartoes_list:
+        gasto = gastos_cartoes[cartao['id']]
+        pagamento = pagamentos_cartoes[cartao['id']]
+        disponivel = cartao['limite'] - gasto
+        utilizacao = (gasto / cartao['limite'] * 100) if cartao['limite'] > 0 else 0
+        
+        # Define status
+        if utilizacao >= 70:
+            status = 'Atenção'
+            status_class = 'warning'
+        elif utilizacao >= 50:
+            status = 'Moderado'
+            status_class = 'info'
+        else:
+            status = 'Saudável'
+            status_class = 'success'
+        
+        cartoes_dados.append({
+            'id': cartao['id'],
+            'descricao': cartao['descricao'],
+            'banco': cartao['banco'],
+            'vencimento': cartao['vencimento'],
+            'limite': cartao['limite'],
+            'gasto': gasto,
+            'pagamento': pagamento,
+            'disponivel': disponivel,
+            'utilizacao': utilizacao,
+            'status': status,
+            'status_class': status_class
+        })
+    
+    # ===== 5. TOP CATEGORIAS NO CARTÃO =====
+    sql_categorias = f'''
+        SELECT 
+            cat.descricao as categoria,
+            SUM(ABS(m.valor)) as total
+        FROM movimentos m
+        JOIN categorias cat ON m.categoria_id = cat.id
+        WHERE m.cartao_id IS NOT NULL
+        AND m.data_movimento >= ?
+        AND m.data_movimento < ?
+        {where_compartilhado}
+        GROUP BY cat.descricao
+        ORDER BY total DESC
+        LIMIT 5
+    '''
+    
+    top_categorias = conn.execute(sql_categorias, (data_inicio, data_fim)).fetchall()
+    categorias_labels = [c['categoria'] for c in top_categorias]
+    categorias_valores = [float(c['total']) for c in top_categorias]
+    
+    # ===== 6. EVOLUÇÃO ÚLTIMOS 6 MESES =====
+    evolucao_data = []
+    for i in range(5, -1, -1):
+        mes_calculo = (datetime.now() - pd.DateOffset(months=i)).strftime('%Y-%m')
+        mes_inicio = f"{mes_calculo}-01"
+        ano_m, mes_m = mes_calculo.split('-')
+        if int(mes_m) == 12:
+            mes_fim = f"{int(ano_m)+1}-01-01"
+        else:
+            mes_fim = f"{ano_m}-{int(mes_m)+1:02d}-01"
+        
+        sql_evolucao = f'''
+            SELECT COALESCE(SUM(ABS(m.valor)), 0) as total
+            FROM movimentos m
+            WHERE m.cartao_id IS NOT NULL
+            AND m.data_movimento >= ?
+            AND m.data_movimento < ?
+            {where_compartilhado}
+        '''
+        
+        total = conn.execute(sql_evolucao, (mes_inicio, mes_fim)).fetchone()['total']
+        evolucao_data.append({
+            'mes': datetime.strptime(mes_calculo, '%Y-%m').strftime('%b/%y'),
+            'total': float(total)
+        })
+    
+    evolucao_labels = [d['mes'] for d in evolucao_data]
+    evolucao_valores = [d['total'] for d in evolucao_data]
+    
+    # ===== 7. PRÓXIMOS VENCIMENTOS =====
+    hoje = datetime.now()
+    proximos_vencimentos = []
+    
+    for cartao_dado in cartoes_dados:
+        if cartao_dado['gasto'] > 0:
+            dias_para_vencimento = cartao_dado['vencimento'] - hoje.day
+            if dias_para_vencimento < 0:
+                dias_para_vencimento += 30  # Aproximação
+            
+            if dias_para_vencimento <= 7:
+                proximos_vencimentos.append({
+                    'cartao': cartao_dado['descricao'],
+                    'vencimento': cartao_dado['vencimento'],
+                    'valor': cartao_dado['gasto'],
+                    'dias': dias_para_vencimento
+                })
+    
+    proximos_vencimentos.sort(key=lambda x: x['dias'])
+    proximos_vencimentos_count = len(proximos_vencimentos)
+    
+    conn.close()
+    
+    # ===== 8. PREPARAR DADOS PARA TEMPLATE =====
+    dados = {
+        'mes_referencia': mes_referencia,
+        'compartilhado': compartilhado,
+        
+        # KPIs
+        'total_gasto_mes': total_gasto_mes,
+        'limite_total': limite_total,
+        'disponivel_total': disponivel_total,
+        'utilizacao_media': utilizacao_media,
+        'proximos_vencimentos_count': proximos_vencimentos_count,
+        
+        # Dados
+        'cartoes_dados': cartoes_dados,
+        'proximos_vencimentos': proximos_vencimentos,
+        
+        # Gráficos
+        'categorias_labels': categorias_labels,
+        'categorias_valores': categorias_valores,
+        'evolucao_labels': evolucao_labels,
+        'evolucao_valores': evolucao_valores
+    }
+    
+    return render_template('relatorio_cartoes.html', **dados)
 
 @app.route('/relatorio/compartilhado')
 def relatorio_compartilhado():
