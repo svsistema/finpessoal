@@ -48,7 +48,11 @@
             {{ format_brl(saldo_inicial) }}
         </div>
         <div style="font-size: 13px; color: #64748b;">
-            {% if data_inicio %}Em {{ data_inicio|replace('-', '/') }}{% else %}Desde o início{% endif %}
+            {% if data_inicio %}
+                Até {{ (data_inicio|replace('-', '/')) }}
+            {% else %}
+                Início dos registros
+            {% endif %}
         </div>
     </div>
 
@@ -178,12 +182,19 @@
 <div class="alert alert-info" style="margin-top: 30px;">
     <strong>ℹ️ Como ler este extrato:</strong>
     <ul style="margin: 10px 0 0 20px;">
+        <li><strong>Saldo Inicial:</strong> Calculado automaticamente somando TODAS as movimentações ANTES do período selecionado</li>
         <li><strong>Movimentos (Receita/Despesa):</strong> Valores em verde/vermelho são receitas e despesas cadastradas em "Movimentos"</li>
         <li><strong>Transferências Recebidas:</strong> Dinheiro que ENTROU nesta conta vindo de outra conta</li>
         <li><strong>Transferências Enviadas:</strong> Dinheiro que SAIU desta conta para outra conta ou cartão</li>
         <li><strong>Saldo:</strong> Mostra o saldo acumulado após cada operação</li>
         <li><strong>Compartilhado:</strong> 👩 = 100% Silvia | 👨 = 100% Nelson | 👥 = 50/50</li>
     </ul>
+</div>
+
+<div class="alert alert-warning" style="margin-top: 20px;">
+    <strong>💡 Dica:</strong> Se você não informar uma data de início, o sistema automaticamente usa a data da primeira movimentação registrada nesta conta. 
+    O saldo inicial será sempre ZERO nesse caso. Se quiser ver um período específico e o saldo correto antes desse período, 
+    defina a data de início desejada.
 </div>
 
 {% else %}

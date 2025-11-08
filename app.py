@@ -999,6 +999,7 @@ def relatorio_saldos():
                            saldos=saldos_list,
                            data_saldo=data_saldo_str, 
                            saldo_total=saldo_total)
+
 # ==============================================================================
 # ADICIONE esta nova rota ao seu app.py (após as outras rotas de relatório)
 # ==============================================================================
@@ -1034,20 +1035,25 @@ def relatorio_extrato():
         (instituicao_id,)
     ).fetchone()
     
-    # ===== 1. CALCULA SALDO INICIAL (antes da data_inicio) =====
+    # ===== 1. CALCULA SALDO INICIAL =====
     saldo_inicial = 0.0
+    
     if data_inicio:
+        # TEM data_inicio: calcula saldo de TUDO que aconteceu ANTES dessa data
         sql_saldo_inicial = '''
             SELECT 
+                -- Movimentos (receitas e despesas)
                 COALESCE(SUM(CASE 
                     WHEN m.status = 'Efetivado' 
                     AND m.cartao_id IS NULL 
                     AND m.data_efetivacao IS NOT NULL 
                     AND date(m.data_efetivacao) < date(?)
+                    AND m.instituicao_id = ?
                     THEN m.valor 
                     ELSE 0 
                 END), 0)
                 +
+                -- Transferências RECEBIDAS
                 COALESCE(SUM(CASE 
                     WHEN t.status = 'Efetivado' 
                     AND t.conta_destino_id = ?
@@ -1057,6 +1063,7 @@ def relatorio_extrato():
                     ELSE 0 
                 END), 0)
                 -
+                -- Transferências ENVIADAS
                 COALESCE(SUM(CASE 
                     WHEN t.status = 'Efetivado' 
                     AND t.conta_origem_id = ?
@@ -1065,16 +1072,22 @@ def relatorio_extrato():
                     THEN t.valor 
                     ELSE 0 
                 END), 0) as saldo
-            FROM instituicoes i
-            LEFT JOIN movimentos m ON m.instituicao_id = i.id
-            LEFT JOIN transferencias t ON (t.conta_origem_id = i.id OR t.conta_destino_id = i.id)
-            WHERE i.id = ?
+            FROM (SELECT 1) dummy
+            LEFT JOIN movimentos m ON 1=1
+            LEFT JOIN transferencias t ON 1=1
         '''
+        
         saldo_inicial_row = conn.execute(
             sql_saldo_inicial, 
-            (data_inicio, instituicao_id, data_inicio, instituicao_id, data_inicio, instituicao_id)
+            (data_inicio, instituicao_id, instituicao_id, data_inicio, 
+             instituicao_id, data_inicio)
         ).fetchone()
+        
         saldo_inicial = saldo_inicial_row['saldo'] if saldo_inicial_row else 0.0
+        
+    else:
+        # NÃO TEM data_inicio: saldo inicial é 0 (vai mostrar desde o primeiro movimento)
+        saldo_inicial = 0.0
     
     # ===== 2. BUSCA MOVIMENTAÇÕES NO PERÍODO =====
     
@@ -2234,6 +2247,362 @@ def relatorio_cartoes():
 def relatorio_compartilhado():
     return render_template('placeholder.html', title="Relatório Compartilhado")
 
+
+# ==============================================================================
+# SCRIPT DE TESTE - Cole isso no final do seu app.py (antes do if __name__)
+# Depois acesse: http://localhost:5000/teste/validar_saldos?instituicao_id=1
+# ==============================================================================
+
+@app.route('/teste/validar_saldos')
+def teste_validar_saldos():
+    """
+    Rota de teste para validar se os saldos estão sendo calculados corretamente.
+    Use: /teste/validar_saldos?instituicao_id=X&data=YYYY-MM-DD
+    """
+    conn = get_db_connection()
+    
+    # Se não passou instituicao_id, mostra a lista
+    instituicao_id = request.args.get('instituicao_id', type=int)
+    
+    if not instituicao_id:
+        # Lista todas as instituições disponíveis
+        instituicoes = conn.execute('SELECT id, descricao FROM instituicoes ORDER BY descricao').fetchall()
+        conn.close()
+        
+        if not instituicoes:
+            return """
+            <html>
+            <head><title>Teste de Saldos</title></head>
+            <body style="font-family: Arial; margin: 40px;">
+                <h1>❌ Nenhuma instituição cadastrada</h1>
+                <p>Você precisa cadastrar pelo menos uma instituição em <strong>Cadastros → Instituições</strong></p>
+                <a href="/" style="display: inline-block; margin-top: 20px; padding: 10px 20px; background: #1976d2; color: white; text-decoration: none; border-radius: 5px;">Voltar ao Sistema</a>
+            </body>
+            </html>
+            """
+        
+        html = """
+        <html>
+        <head>
+            <title>Teste de Saldos - Selecione uma Conta</title>
+            <style>
+                body { font-family: Arial; margin: 40px; background: #f5f5f5; }
+                .container { max-width: 800px; margin: 0 auto; background: white; padding: 30px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+                h1 { color: #333; }
+                .conta-lista { list-style: none; padding: 0; }
+                .conta-item { margin: 10px 0; }
+                .conta-item a { 
+                    display: block; 
+                    padding: 15px 20px; 
+                    background: #e3f2fd; 
+                    color: #1976d2; 
+                    text-decoration: none; 
+                    border-radius: 5px;
+                    transition: all 0.3s;
+                }
+                .conta-item a:hover { 
+                    background: #1976d2; 
+                    color: white; 
+                    transform: translateX(5px);
+                }
+                .info { background: #fff3cd; padding: 15px; border-radius: 5px; margin: 20px 0; border-left: 4px solid #ffc107; }
+            </style>
+        </head>
+        <body>
+            <div class="container">
+                <h1>🔍 Teste de Validação de Saldos</h1>
+                
+                <div class="info">
+                    <strong>📋 Instruções:</strong><br>
+                    Selecione uma conta bancária abaixo para ver o cálculo detalhado do saldo.
+                </div>
+                
+                <h2>Suas Contas Cadastradas:</h2>
+                <ul class="conta-lista">
+        """
+        
+        for inst in instituicoes:
+            html += f"""
+                <li class="conta-item">
+                    <a href="?instituicao_id={inst['id']}">
+                        🏦 {inst['descricao']} (ID: {inst['id']})
+                    </a>
+                </li>
+            """
+        
+        html += """
+                </ul>
+                
+                <div class="info" style="margin-top: 30px;">
+                    <strong>💡 Dica:</strong> Após selecionar uma conta, você pode adicionar <code>&data=YYYY-MM-DD</code> na URL para testar uma data específica.<br>
+                    Exemplo: <code>?instituicao_id=2&data=2024-10-01</code>
+                </div>
+                
+                <div style="margin-top: 30px; text-align: center;">
+                    <a href="/" style="display: inline-block; padding: 10px 20px; background: #64748b; color: white; text-decoration: none; border-radius: 5px;">« Voltar ao Sistema</a>
+                </div>
+            </div>
+        </body>
+        </html>
+        """
+        
+        return html
+    
+    data_teste = request.args.get('data', date.today().strftime('%Y-%m-%d'))
+    
+    conn = get_db_connection()
+    
+    # Busca nome da instituição
+    inst = conn.execute('SELECT descricao FROM instituicoes WHERE id = ?', (instituicao_id,)).fetchone()
+    if not inst:
+        conn.close()
+        return f"<h1>Erro: Instituição {instituicao_id} não encontrada</h1>"
+    
+    instituicao_nome = inst['descricao']
+    
+    # 1. MOVIMENTOS (receitas e despesas)
+    sql_movimentos = '''
+        SELECT 
+            date(m.data_efetivacao) as data,
+            m.descricao,
+            c.tipo,
+            m.valor
+        FROM movimentos m
+        JOIN categorias c ON m.categoria_id = c.id
+        WHERE m.instituicao_id = ?
+        AND m.status = 'Efetivado'
+        AND m.cartao_id IS NULL
+        AND m.data_efetivacao IS NOT NULL
+        AND date(m.data_efetivacao) < date(?)
+        ORDER BY date(m.data_efetivacao)
+    '''
+    movimentos = conn.execute(sql_movimentos, (instituicao_id, data_teste)).fetchall()
+    
+    # 2. TRANSFERÊNCIAS RECEBIDAS
+    sql_recebidas = '''
+        SELECT 
+            date(t.data_efetivacao) as data,
+            t.descricao,
+            'Recebida' as tipo,
+            t.valor
+        FROM transferencias t
+        WHERE t.conta_destino_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+        AND date(t.data_efetivacao) < date(?)
+        ORDER BY date(t.data_efetivacao)
+    '''
+    recebidas = conn.execute(sql_recebidas, (instituicao_id, data_teste)).fetchall()
+    
+    # 3. TRANSFERÊNCIAS ENVIADAS
+    sql_enviadas = '''
+        SELECT 
+            date(t.data_efetivacao) as data,
+            t.descricao,
+            'Enviada' as tipo,
+            -t.valor as valor
+        FROM transferencias t
+        WHERE t.conta_origem_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+        AND date(t.data_efetivacao) < date(?)
+        ORDER BY date(t.data_efetivacao)
+    '''
+    enviadas = conn.execute(sql_enviadas, (instituicao_id, data_teste)).fetchall()
+    
+    conn.close()
+    
+    # MONTA O HTML DE RESULTADO
+    html = f"""
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Validação de Saldos</title>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }}
+            .container {{ max-width: 1200px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; }}
+            h1 {{ color: #333; }}
+            .info {{ background: #e3f2fd; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th {{ background: #1976d2; color: white; padding: 10px; text-align: left; }}
+            td {{ padding: 8px; border-bottom: 1px solid #ddd; }}
+            tr:hover {{ background: #f5f5f5; }}
+            .receita {{ color: green; font-weight: bold; }}
+            .despesa {{ color: red; font-weight: bold; }}
+            .transferencia {{ color: blue; font-weight: bold; }}
+            .total {{ background: #f0f0f0; font-weight: bold; font-size: 18px; }}
+            .saldo-final {{ background: #4caf50; color: white; padding: 20px; border-radius: 5px; text-align: center; font-size: 24px; margin: 20px 0; }}
+            .erro {{ background: #ffebee; color: #c62828; padding: 15px; border-radius: 5px; margin: 20px 0; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🔍 Validação de Saldos</h1>
+            
+            <div class="info">
+                <strong>Conta:</strong> {instituicao_nome}<br>
+                <strong>Calculando saldo até:</strong> {data_teste}<br>
+                <strong>Movimentações consideradas:</strong> Todas as efetivadas ANTES desta data
+            </div>
+            
+            <h2>📊 Detalhamento do Cálculo</h2>
+    """
+    
+    # Combina todas as movimentações
+    todas = []
+    saldo_acumulado = 0.0
+    
+    # Adiciona movimentos
+    for mov in movimentos:
+        todas.append({
+            'data': mov['data'],
+            'descricao': mov['descricao'],
+            'tipo': mov['tipo'],
+            'valor': mov['valor']
+        })
+    
+    # Adiciona transferências recebidas
+    for rec in recebidas:
+        todas.append({
+            'data': rec['data'],
+            'descricao': rec['descricao'],
+            'tipo': rec['tipo'],
+            'valor': rec['valor']
+        })
+    
+    # Adiciona transferências enviadas
+    for env in enviadas:
+        todas.append({
+            'data': env['data'],
+            'descricao': env['descricao'],
+            'tipo': env['tipo'],
+            'valor': env['valor']
+        })
+    
+    # Ordena por data
+    todas.sort(key=lambda x: x['data'])
+    
+    if todas:
+        html += """
+            <table>
+                <thead>
+                    <tr>
+                        <th>Data</th>
+                        <th>Descrição</th>
+                        <th>Tipo</th>
+                        <th style="text-align: right;">Valor</th>
+                        <th style="text-align: right;">Saldo Acumulado</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        
+        for item in todas:
+            saldo_acumulado += item['valor']
+            
+            if item['tipo'] == 'Receita':
+                classe_valor = 'receita'
+                tipo_display = '💰 Receita'
+            elif item['tipo'] == 'Despesa':
+                classe_valor = 'despesa'
+                tipo_display = '💸 Despesa'
+            elif item['tipo'] == 'Recebida':
+                classe_valor = 'transferencia'
+                tipo_display = '⬇️ Transf. Recebida'
+            else:
+                classe_valor = 'despesa'
+                tipo_display = '⬆️ Transf. Enviada'
+            
+            valor_formatado = f"R$ {abs(item['valor']):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            if item['valor'] < 0:
+                valor_formatado = f"- {valor_formatado}"
+            else:
+                valor_formatado = f"+ {valor_formatado}"
+            
+            saldo_formatado = f"R$ {abs(saldo_acumulado):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+            if saldo_acumulado < 0:
+                saldo_formatado = f"- {saldo_formatado}"
+            
+            html += f"""
+                <tr>
+                    <td>{item['data']}</td>
+                    <td>{item['descricao']}</td>
+                    <td>{tipo_display}</td>
+                    <td class="{classe_valor}" style="text-align: right;">{valor_formatado}</td>
+                    <td style="text-align: right; font-weight: bold;">{saldo_formatado}</td>
+                </tr>
+            """
+        
+        html += """
+                </tbody>
+            </table>
+        """
+    else:
+        html += '<div class="info">✅ Nenhuma movimentação encontrada antes desta data. Saldo inicial = R$ 0,00</div>'
+    
+    saldo_final_formatado = f"R$ {abs(saldo_acumulado):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    if saldo_acumulado < 0:
+        saldo_final_formatado = f"- {saldo_final_formatado}"
+    
+    html += f"""
+            <div class="saldo-final">
+                💰 SALDO EM {data_teste}: {saldo_final_formatado}
+            </div>
+            
+            <div class="info">
+                <h3>✅ Como validar:</h3>
+                <ol>
+                    <li>Vá em <strong>Relatórios → Extrato Bancário</strong></li>
+                    <li>Selecione a conta: <strong>{instituicao_nome}</strong></li>
+                    <li>Coloque Data Início: <strong>{data_teste}</strong></li>
+                    <li>O <strong>Saldo Inicial</strong> mostrado deve ser: <strong>{saldo_final_formatado}</strong></li>
+                </ol>
+                
+                <p style="background: #e8f5e9; padding: 10px; border-radius: 5px; margin-top: 15px;">
+                    💡 <strong>Atenção:</strong> Este é o saldo até <strong>{data_teste}</strong> (exclusive). 
+                    Se você colocar esta data como início no extrato, ela será o primeiro dia DO PERÍODO, 
+                    e o saldo mostrado acima será o saldo ANTES deste dia começar.
+                </p>
+            </div>
+            
+            <div class="info">
+                <h3>🧪 Testes Rápidos:</h3>
+                <div style="display: grid; gap: 10px; margin-top: 15px;">
+                    <a href="?instituicao_id={instituicao_id}&data={date.today().strftime('%Y-%m-%d')}" 
+                       style="display: block; padding: 10px; background: #e3f2fd; color: #1976d2; text-decoration: none; border-radius: 5px; text-align: center;">
+                        📅 Ver saldo até HOJE
+                    </a>
+                    <a href="?instituicao_id={instituicao_id}&data=2024-01-01" 
+                       style="display: block; padding: 10px; background: #e3f2fd; color: #1976d2; text-decoration: none; border-radius: 5px; text-align: center;">
+                        📅 Ver saldo até 01/01/2024
+                    </a>
+                    <a href="?instituicao_id={instituicao_id}&data={(datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')}" 
+                       style="display: block; padding: 10px; background: #e3f2fd; color: #1976d2; text-decoration: none; border-radius: 5px; text-align: center;">
+                        📅 Ver saldo há 30 dias
+                    </a>
+                    <a href="/relatorio/extrato?instituicao_id={instituicao_id}&data_inicio={data_teste}" 
+                       style="display: block; padding: 10px; background: #4caf50; color: white; text-decoration: none; border-radius: 5px; text-align: center; font-weight: bold;">
+                        🔗 Abrir Extrato Bancário com esta data
+                    </a>
+                </div>
+            </div>
+            
+            <div class="info" style="background: #fff3cd; border-left: 4px solid #ffc107;">
+                <h3>🔧 Outras Contas:</h3>
+                <p>Quer testar outra conta? <a href="/teste/validar_saldos" style="color: #f57c00; font-weight: bold;">Clique aqui</a> para voltar à lista.</p>
+            </div>
+            
+            <div style="margin-top: 30px; text-align: center;">
+                <a href="/" style="display: inline-block; padding: 12px 24px; background: #64748b; color: white; text-decoration: none; border-radius: 5px; font-weight: bold;">
+                    « Voltar ao Sistema
+                </a>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    
+    return html
 
 if __name__ == '__main__':
     app.run(debug=True)
