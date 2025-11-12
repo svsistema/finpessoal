@@ -3,6 +3,31 @@
 {% block title %}Dashboard de Investimentos{% endblock %}
 
 {% block content %}
+<style>
+/* Estilos específicos para o Dashboard de Investimentos */
+.card {
+    position: relative;
+    clear: both;
+    margin-bottom: 30px !important;
+}
+
+/* Garante espaçamento adequado */
+.page-header {
+    margin-bottom: 30px;
+    clear: both;
+}
+
+.alert {
+    clear: both;
+    margin-bottom: 30px;
+}
+
+/* Evita sobreposição de grids */
+[style*="display: grid"] {
+    clear: both;
+}
+</style>
+
 <div class="page-header">
     <div class="breadcrumb">
         <a href="{{ url_for('dashboard') }}">📊 Dashboard</a> / <span>Investimentos</span>
@@ -12,7 +37,7 @@
 </div>
 
 <!-- KPIs DE INVESTIMENTOS -->
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; clear: both;">
     <div class="card" style="background: linear-gradient(135deg, #10b981 0%, #059669 100%); color: white;">
         <div style="display: flex; justify-content: space-between; align-items: flex-start;">
             <div>
@@ -66,11 +91,11 @@
 
 <!-- ALERTAS -->
 {% if num_ativos == 0 %}
-<div class="alert alert-info" style="margin-bottom: 30px;">
+<div class="alert alert-info">
     <strong>📊 Comece a Investir:</strong> Você ainda não tem investimentos cadastrados. Vá em "Investimentos > Operações" para adicionar seus primeiros ativos!
 </div>
 {% else %}
-<div class="alert alert-info" style="margin-bottom: 30px;">
+<div class="alert alert-info">
     <strong>💡 Dica de Investimentos:</strong> 
     {% if num_ativos >= 10 %}
         Sua carteira está bem diversificada! Continue investindo mensalmente para aproveitar o poder dos juros compostos.
@@ -80,11 +105,9 @@
         Sua carteira tem poucos ativos. Considere diversificar mais para reduzir riscos.
     {% endif %}
 </div>
-{% endif %}
 
 <!-- GRÁFICOS DE INVESTIMENTOS -->
-{% if num_ativos > 0 %}
-<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-bottom: 30px;">
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 20px; margin-bottom: 30px; clear: both;">
     <!-- Alocação de Carteira -->
     <div class="card">
         <div class="card-title">Alocação de Carteira por Classe</div>
@@ -98,11 +121,11 @@
         <div class="card-title">Evolução do Patrimônio Investido</div>
         {% if evolucao_labels %}
         <div style="position: relative; height:300px; width:100%">
-        <canvas id="evolucaoInvestChart" height="300"></canvas>
+            <canvas id="evolucaoInvestChart" height="300"></canvas>
+        </div>
         {% else %}
         <p style="text-align: center; color: #64748b; padding: 60px;">Adicione mais investimentos para ver a evolução ao longo do tempo.</p>
         {% endif %}
-        </div>
     </div>
 
     <!-- Rentabilidade por Ativo -->
@@ -111,17 +134,19 @@
         {% if top_5_labels %}
         <div style="position: relative; height:300px; width:100%">
             <canvas id="rentabilidadeChart" height="300"></canvas>
+        </div>
         {% else %}
         <p style="text-align: center; color: #64748b; padding: 60px;">Nenhum ativo encontrado.</p>
         {% endif %}
-        </div>
     </div>
 
     <!-- Dividendos Mensais -->
     <div class="card">
         <div class="card-title">Dividendos Recebidos (Últimos 6 Meses)</div>
         {% if dividendos_labels %}
+        <div style="position: relative; height:300px; width:100%">
             <canvas id="dividendosChart" height="300"></canvas>
+        </div>
         {% else %}
         <p style="text-align: center; color: #64748b; padding: 60px;">
             Nenhum dividendo registrado. Cadastre operações do tipo "Dividendo" para acompanhar seus rendimentos.
@@ -131,52 +156,54 @@
 </div>
 
 <!-- TABELA DE POSIÇÕES -->
-<div class="card">
+<div class="card" style="clear: both;">
     <div class="card-title">Posição Atual - Carteira de Investimentos</div>
     {% if tabela_posicoes %}
-    <table>
-        <thead>
-            <tr>
-                <th>Ativo</th>
-                <th>Classe</th>
-                <th style="text-align: right;">Quantidade</th>
-                <th style="text-align: right;">Preço Médio</th>
-                <th style="text-align: right;">Valor Investido</th>
-                <th style="text-align: right;">Valor Atual</th>
-                <th style="text-align: right;">Rentabilidade</th>
-                <th style="text-align: right;">% Carteira</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for pos in tabela_posicoes %}
-            <tr>
-                <td><strong>{{ pos.ticker }}</strong></td>
-                <td>{{ pos.classe }}</td>
-                <td style="text-align: right;">{{ pos.quantidade }}</td>
-                <td style="text-align: right;">{{ pos.preco_medio }}</td>
-                <td style="text-align: right;">{{ pos.valor_investido }}</td>
-                <td style="text-align: right;">{{ pos.valor_atual }}</td>
-                <td style="text-align: right;">
-                    <span class="badge {% if pos.rentabilidade_num >= 0 %}badge-success{% else %}badge-danger{% endif %}">
-                        {% if pos.rentabilidade_num >= 0 %}+{% endif %}{{ pos.rentabilidade }}
-                    </span>
-                </td>
-                <td style="text-align: right;">{{ pos.percentual_carteira }}</td>
-            </tr>
-            {% endfor %}
-            <tr style="background: #f8fafc; font-weight: 600;">
-                <td colspan="4"><strong>TOTAL</strong></td>
-                <td style="text-align: right;"><strong>{{ patrimonio_total }}</strong></td>
-                <td style="text-align: right;"><strong>{{ valor_atual_total }}</strong></td>
-                <td style="text-align: right;">
-                    <span class="badge {% if rentabilidade_total_num >= 0 %}badge-success{% else %}badge-danger{% endif %}">
-                        {% if rentabilidade_total_num >= 0 %}+{% endif %}{{ rentabilidade_total }}
-                    </span>
-                </td>
-                <td style="text-align: right;"><strong>100%</strong></td>
-            </tr>
-        </tbody>
-    </table>
+    <div style="overflow-x: auto;">
+        <table>
+            <thead>
+                <tr>
+                    <th>Ativo</th>
+                    <th>Classe</th>
+                    <th style="text-align: right;">Quantidade</th>
+                    <th style="text-align: right;">Preço Médio</th>
+                    <th style="text-align: right;">Valor Investido</th>
+                    <th style="text-align: right;">Valor Atual</th>
+                    <th style="text-align: right;">Rentabilidade</th>
+                    <th style="text-align: right;">% Carteira</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for pos in tabela_posicoes %}
+                <tr>
+                    <td><strong>{{ pos.ticker }}</strong></td>
+                    <td>{{ pos.classe }}</td>
+                    <td style="text-align: right;">{{ pos.quantidade }}</td>
+                    <td style="text-align: right;">{{ pos.preco_medio }}</td>
+                    <td style="text-align: right;">{{ pos.valor_investido }}</td>
+                    <td style="text-align: right;">{{ pos.valor_atual }}</td>
+                    <td style="text-align: right;">
+                        <span class="badge {% if pos.rentabilidade_num >= 0 %}badge-success{% else %}badge-danger{% endif %}">
+                            {% if pos.rentabilidade_num >= 0 %}+{% endif %}{{ pos.rentabilidade }}
+                        </span>
+                    </td>
+                    <td style="text-align: right;">{{ pos.percentual_carteira }}</td>
+                </tr>
+                {% endfor %}
+                <tr style="background: #f8fafc; font-weight: 600;">
+                    <td colspan="4"><strong>TOTAL</strong></td>
+                    <td style="text-align: right;"><strong>{{ patrimonio_total }}</strong></td>
+                    <td style="text-align: right;"><strong>{{ valor_atual_total }}</strong></td>
+                    <td style="text-align: right;">
+                        <span class="badge {% if rentabilidade_total_num >= 0 %}badge-success{% else %}badge-danger{% endif %}">
+                            {% if rentabilidade_total_num >= 0 %}+{% endif %}{{ rentabilidade_total }}
+                        </span>
+                    </td>
+                    <td style="text-align: right;"><strong>100%</strong></td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
     {% else %}
     <p style="text-align: center; color: #64748b; padding: 40px;">
         Nenhum ativo na carteira. Comece adicionando investimentos!
@@ -185,7 +212,7 @@
 </div>
 
 <!-- COMPARAÇÃO COM BENCHMARKS -->
-<div class="card" style="margin-top: 30px;">
+<div class="card" style="clear: both;">
     <div class="card-title">Comparação com Benchmarks (12 meses)</div>
     <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px;">
         <div style="text-align: center; padding: 20px; background: {% if rentabilidade_total_num >= 0 %}#f0fdf4{% else %}#fef2f2{% endif %}; border-radius: 8px;">
@@ -222,12 +249,14 @@
     {% endif %}
 </div>
 
-<div class="alert alert-info" style="margin-top: 30px;">
+<div class="alert alert-info" style="clear: both;">
     <strong>ℹ️ Nota:</strong> Os valores de rentabilidade são estimados com base nos dados cadastrados. Para valores precisos, considere atualizar os preços atuais dos ativos ou integrar com uma API de cotações.
 </div>
 
-{% else %}
-<div class="card">
+{% endif %}
+
+{% if num_ativos == 0 %}
+<div class="card" style="clear: both;">
     <div style="text-align: center; padding: 60px;">
         <div style="font-size: 48px; margin-bottom: 20px;">📊</div>
         <h3 style="color: #1e293b; margin-bottom: 10px;">Comece a Investir!</h3>
