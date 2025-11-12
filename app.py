@@ -460,6 +460,406 @@ def delete_movimento(id):
     conn.close()
     return redirect(url_for('movimentos'))
 
+# ==============================================================================
+# ADICIONE ESTAS ROTAS AO SEU app.py (após as rotas de movimentos existentes)
+# ==============================================================================
+
+from flask import send_file, make_response
+import csv
+from io import StringIO, BytesIO
+from openpyxl import Workbook
+from openpyxl.styles import Font, PatternFill, Alignment, Border, Side
+
+# --- ROTA PARA EXPORTAR MOVIMENTOS ---
+@app.route('/movimentos/exportar')
+def exportar_movimentos():
+    """
+    Exporta movimentos filtrados para CSV ou Excel
+    Parâmetros aceitos via query string:
+    - formato: 'csv' ou 'excel' (padrão: csv)
+    - data_inicio, data_fim: filtros de data (opcional)
+    - categoria_id, instituicao_id, status, compartilhado: filtros adicionais (opcional)
+    """
+    conn = get_db_connection()
+    
+    # Parâmetros de filtro
+    formato = request.args.get('formato', 'csv').lower()
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    categoria_id = request.args.get('categoria_id')
+    instituicao_id = request.args.get('instituicao_id')
+    status = request.args.get('status')
+    compartilhado = request.args.get('compartilhado')
+    
+    # Monta query com filtros
+    sql = '''
+        SELECT
+            m.id,
+            date(m.data_movimento) as data_movimento,
+            date(m.data_efetivacao) as data_efetivacao,
+            m.descricao,
+            c.descricao as categoria,
+            c.tipo as categoria_tipo,
+            i.descricao as instituicao,
+            cc.descricao as cartao,
+            m.valor,
+            m.status,
+            m.compartilhado
+        FROM movimentos m
+        JOIN categorias c ON m.categoria_id = c.id
+        JOIN instituicoes i ON m.instituicao_id = i.id
+        LEFT JOIN cartoes_credito cc ON m.cartao_id = cc.id
+        WHERE 1=1
+    '''
+    
+    params = []
+    
+    if data_inicio:
+        sql += ' AND m.data_movimento >= ?'
+        params.append(data_inicio)
+    
+    if data_fim:
+        sql += ' AND m.data_movimento <= ?'
+        params.append(data_fim)
+    
+    if categoria_id:
+        sql += ' AND m.categoria_id = ?'
+        params.append(categoria_id)
+    
+    if instituicao_id:
+        sql += ' AND m.instituicao_id = ?'
+        params.append(instituicao_id)
+    
+    if status:
+        sql += ' AND m.status = ?'
+        params.append(status)
+    
+    if compartilhado:
+        sql += ' AND m.compartilhado = ?'
+        params.append(compartilhado)
+    
+    sql += ' ORDER BY m.data_movimento DESC, m.id DESC'
+    
+    # Busca dados
+    movimentos = conn.execute(sql, params).fetchall()
+    conn.close()
+    
+    if not movimentos:
+        flash('Nenhum movimento encontrado para exportação.', 'warning')
+        return redirect(url_for('movimentos'))
+    
+    # Exporta no formato escolhido
+    if formato == 'excel':
+        return _exportar_excel(movimentos, data_inicio, data_fim)
+    else:
+        return _exportar_csv(movimentos, data_inicio, data_fim)
+
+
+def _exportar_csv(movimentos, data_inicio=None, data_fim=None):
+    """Exporta movimentos para CSV"""
+    
+    # Cria buffer de memória
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    
+    # Cabeçalho
+    writer.writerow([
+        'ID',
+        'Data Movimento',
+        'Data Efetivação',
+        'Descrição',
+        'Categoria',
+        'Tipo',
+        'Instituição',
+        'Cartão',
+        'Valor',
+        'Status',
+        'Compartilhado'
+    ])
+    
+    # Dados
+    for mov in movimentos:
+        writer.writerow([
+            mov['id'],
+            mov['data_movimento'],
+            mov['data_efetivacao'] or '',
+            mov['descricao'],
+            mov['categoria'],
+            mov['categoria_tipo'],
+            mov['instituicao'],
+            mov['cartao'] or '',
+            f"{mov['valor']:.2f}".replace('.', ','),
+            mov['status'],
+            mov['compartilhado']
+        ])
+    
+    # Prepara resposta
+    output.seek(0)
+    
+    # Nome do arquivo com período
+    periodo = ''
+    if data_inicio and data_fim:
+        periodo = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo = f"_ate_{data_fim}"
+    
+    filename = f"movimentos{periodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    
+    return response
+
+
+def _exportar_excel(movimentos, data_inicio=None, data_fim=None):
+    """Exporta movimentos para Excel com formatação"""
+    
+    # Cria workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Movimentos"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Cabeçalho
+    headers = [
+        'ID', 'Data Movimento', 'Data Efetivação', 'Descrição',
+        'Categoria', 'Tipo', 'Instituição', 'Cartão',
+        'Valor', 'Status', 'Compartilhado'
+    ]
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+    
+    # Dados
+    for row_num, mov in enumerate(movimentos, 2):
+        ws.cell(row=row_num, column=1, value=mov['id']).border = border
+        ws.cell(row=row_num, column=2, value=mov['data_movimento']).border = border
+        ws.cell(row=row_num, column=3, value=mov['data_efetivacao'] or '').border = border
+        ws.cell(row=row_num, column=4, value=mov['descricao']).border = border
+        ws.cell(row=row_num, column=5, value=mov['categoria']).border = border
+        ws.cell(row=row_num, column=6, value=mov['categoria_tipo']).border = border
+        ws.cell(row=row_num, column=7, value=mov['instituicao']).border = border
+        ws.cell(row=row_num, column=8, value=mov['cartao'] or '').border = border
+        
+        # Valor com formatação
+        valor_cell = ws.cell(row=row_num, column=9, value=mov['valor'])
+        valor_cell.number_format = '#,##0.00'
+        valor_cell.border = border
+        
+        # Cor do valor baseado no tipo
+        if mov['categoria_tipo'] == 'Receita':
+            valor_cell.font = Font(color="008000", bold=True)  # Verde
+        else:
+            valor_cell.font = Font(color="FF0000", bold=True)  # Vermelho
+        
+        ws.cell(row=row_num, column=10, value=mov['status']).border = border
+        ws.cell(row=row_num, column=11, value=mov['compartilhado']).border = border
+    
+    # Ajusta largura das colunas
+    column_widths = {
+        'A': 8,   # ID
+        'B': 15,  # Data Movimento
+        'C': 15,  # Data Efetivação
+        'D': 40,  # Descrição
+        'E': 20,  # Categoria
+        'F': 12,  # Tipo
+        'G': 20,  # Instituição
+        'H': 20,  # Cartão
+        'I': 15,  # Valor
+        'J': 12,  # Status
+        'K': 15   # Compartilhado
+    }
+    
+    for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+    
+    # Congela primeira linha
+    ws.freeze_panes = 'A2'
+    
+    # Adiciona totalizadores
+    ultima_linha = len(movimentos) + 2
+    
+    ws.cell(row=ultima_linha, column=8, value='TOTAL:').font = Font(bold=True)
+    ws.cell(row=ultima_linha, column=8).alignment = Alignment(horizontal='right')
+    
+    total_formula = f'=SUM(I2:I{ultima_linha-1})'
+    total_cell = ws.cell(row=ultima_linha, column=9, value=total_formula)
+    total_cell.font = Font(bold=True, size=12)
+    total_cell.number_format = '#,##0.00'
+    total_cell.fill = PatternFill(start_color="E7E6E6", end_color="E7E6E6", fill_type="solid")
+    total_cell.border = border
+    
+    # Salva em buffer
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    # Nome do arquivo
+    periodo = ''
+    if data_inicio and data_fim:
+        periodo = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo = f"_ate_{data_fim}"
+    
+    filename = f"movimentos{periodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+# --- ROTA PARA EXPORTAR RESUMO MENSAL ---
+@app.route('/movimentos/exportar-resumo')
+def exportar_resumo_mensal():
+    """
+    Exporta resumo mensal consolidado (receitas, despesas, resultado)
+    """
+    conn = get_db_connection()
+    
+    # Parâmetros
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    formato = request.args.get('formato', 'excel').lower()
+    
+    # Query para resumo mensal
+    sql = '''
+        SELECT 
+            strftime('%Y-%m', m.data_movimento) as mes,
+            SUM(CASE WHEN c.tipo = 'Receita' THEN m.valor ELSE 0 END) as receitas,
+            SUM(CASE WHEN c.tipo = 'Despesa' THEN ABS(m.valor) ELSE 0 END) as despesas,
+            SUM(m.valor) as resultado
+        FROM movimentos m
+        JOIN categorias c ON m.categoria_id = c.id
+        WHERE m.status = 'Efetivado'
+    '''
+    
+    params = []
+    
+    if data_inicio:
+        sql += ' AND m.data_movimento >= ?'
+        params.append(data_inicio)
+    
+    if data_fim:
+        sql += ' AND m.data_movimento <= ?'
+        params.append(data_fim)
+    
+    sql += ' GROUP BY mes ORDER BY mes'
+    
+    resumo = conn.execute(sql, params).fetchall()
+    conn.close()
+    
+    if not resumo:
+        flash('Nenhum dado encontrado para exportação do resumo.', 'warning')
+        return redirect(url_for('movimentos'))
+    
+    # Exporta
+    if formato == 'excel':
+        return _exportar_resumo_excel(resumo, data_inicio, data_fim)
+    else:
+        return _exportar_resumo_csv(resumo, data_inicio, data_fim)
+
+
+def _exportar_resumo_csv(resumo, data_inicio=None, data_fim=None):
+    """Exporta resumo mensal para CSV"""
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';')
+    
+    writer.writerow(['Mês', 'Receitas', 'Despesas', 'Resultado'])
+    
+    for row in resumo:
+        writer.writerow([
+            row['mes'],
+            f"{row['receitas']:.2f}".replace('.', ','),
+            f"{row['despesas']:.2f}".replace('.', ','),
+            f"{row['resultado']:.2f}".replace('.', ',')
+        ])
+    
+    output.seek(0)
+    
+    filename = f"resumo_mensal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    
+    return response
+
+
+def _exportar_resumo_excel(resumo, data_inicio=None, data_fim=None):
+    """Exporta resumo mensal para Excel com gráfico"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Resumo Mensal"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    
+    # Cabeçalho
+    headers = ['Mês', 'Receitas', 'Despesas', 'Resultado']
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+    
+    # Dados
+    for row_num, row in enumerate(resumo, 2):
+        ws.cell(row=row_num, column=1, value=row['mes'])
+        ws.cell(row=row_num, column=2, value=row['receitas']).number_format = '#,##0.00'
+        ws.cell(row=row_num, column=3, value=row['despesas']).number_format = '#,##0.00'
+        
+        resultado_cell = ws.cell(row=row_num, column=4, value=row['resultado'])
+        resultado_cell.number_format = '#,##0.00'
+        
+        # Cor baseada no resultado
+        if row['resultado'] >= 0:
+            resultado_cell.font = Font(color="008000", bold=True)
+        else:
+            resultado_cell.font = Font(color="FF0000", bold=True)
+    
+    # Larguras
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 15
+    ws.column_dimensions['C'].width = 15
+    ws.column_dimensions['D'].width = 15
+    
+    # Salva
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"resumo_mensal_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
 # --- ROTAS INVESTIMENTOS ---
 # ... (código existente com os novos campos, sem alterações) ...
 @app.route('/investimentos')
@@ -1260,6 +1660,587 @@ def relatorio_extrato():
                          data_inicio=data_inicio,
                          data_fim=data_fim)
 
+# ==============================================================================
+# ADICIONE ESTAS ROTAS AO SEU app.py (após a rota relatorio_extrato existente)
+# ==============================================================================
+
+# --- ROTA PARA EXPORTAR EXTRATO BANCÁRIO ---
+@app.route('/relatorio/extrato/exportar')
+def exportar_extrato():
+    """
+    Exporta extrato bancário completo para CSV ou Excel
+    Parâmetros:
+    - formato: 'csv' ou 'excel' (padrão: excel)
+    - instituicao_id: ID da conta bancária (obrigatório)
+    - data_inicio, data_fim: filtros de data (opcional)
+    """
+    
+    instituicao_id = request.args.get('instituicao_id', type=int)
+    
+    if not instituicao_id:
+        flash('Selecione uma conta bancária para exportar o extrato.', 'warning')
+        return redirect(url_for('relatorio_extrato'))
+    
+    conn = get_db_connection()
+    
+    # Parâmetros
+    formato = request.args.get('formato', 'excel').lower()
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    
+    # Busca nome da instituição
+    instituicao_selecionada = conn.execute(
+        'SELECT descricao FROM instituicoes WHERE id = ?', 
+        (instituicao_id,)
+    ).fetchone()
+    
+    if not instituicao_selecionada:
+        flash('Conta bancária não encontrada.', 'error')
+        conn.close()
+        return redirect(url_for('relatorio_extrato'))
+    
+    instituicao_nome = instituicao_selecionada['descricao']
+    
+    # ===== CALCULA SALDO INICIAL =====
+    saldo_inicial = 0.0
+    
+    if data_inicio:
+        sql_saldo_inicial = '''
+            SELECT 
+                COALESCE(SUM(CASE 
+                    WHEN m.status = 'Efetivado' 
+                    AND m.cartao_id IS NULL 
+                    AND m.data_efetivacao IS NOT NULL 
+                    AND date(m.data_efetivacao) < date(?)
+                    AND m.instituicao_id = ?
+                    THEN m.valor 
+                    ELSE 0 
+                END), 0)
+                +
+                COALESCE(SUM(CASE 
+                    WHEN t.status = 'Efetivado' 
+                    AND t.conta_destino_id = ?
+                    AND t.data_efetivacao IS NOT NULL
+                    AND date(t.data_efetivacao) < date(?)
+                    THEN t.valor 
+                    ELSE 0 
+                END), 0)
+                -
+                COALESCE(SUM(CASE 
+                    WHEN t.status = 'Efetivado' 
+                    AND t.conta_origem_id = ?
+                    AND t.data_efetivacao IS NOT NULL
+                    AND date(t.data_efetivacao) < date(?)
+                    THEN t.valor 
+                    ELSE 0 
+                END), 0) as saldo
+            FROM (SELECT 1) dummy
+            LEFT JOIN movimentos m ON 1=1
+            LEFT JOIN transferencias t ON 1=1
+        '''
+        
+        saldo_inicial_row = conn.execute(
+            sql_saldo_inicial, 
+            (data_inicio, instituicao_id, instituicao_id, data_inicio, 
+             instituicao_id, data_inicio)
+        ).fetchone()
+        
+        saldo_inicial = saldo_inicial_row['saldo'] if saldo_inicial_row else 0.0
+    
+    # ===== BUSCA MOVIMENTAÇÕES =====
+    
+    # Movimentos
+    sql_movimentos = '''
+        SELECT 
+            date(m.data_efetivacao) as data,
+            m.descricao,
+            'Movimento' as tipo,
+            c.descricao as categoria,
+            c.tipo as categoria_tipo,
+            m.valor,
+            m.compartilhado,
+            NULL as origem_destino
+        FROM movimentos m
+        JOIN categorias c ON m.categoria_id = c.id
+        WHERE m.instituicao_id = ?
+        AND m.status = 'Efetivado'
+        AND m.cartao_id IS NULL
+        AND m.data_efetivacao IS NOT NULL
+    '''
+    params_mov = [instituicao_id]
+    
+    if data_inicio:
+        sql_movimentos += ' AND date(m.data_efetivacao) >= date(?)'
+        params_mov.append(data_inicio)
+    if data_fim:
+        sql_movimentos += ' AND date(m.data_efetivacao) <= date(?)'
+        params_mov.append(data_fim)
+    
+    sql_movimentos += ' ORDER BY date(m.data_efetivacao)'
+    
+    movimentos = conn.execute(sql_movimentos, params_mov).fetchall()
+    
+    # Transferências Recebidas
+    sql_recebidas = '''
+        SELECT 
+            date(t.data_efetivacao) as data,
+            t.descricao,
+            'Transferência Recebida' as tipo,
+            NULL as categoria,
+            NULL as categoria_tipo,
+            t.valor,
+            t.compartilhado,
+            io.descricao as origem_destino
+        FROM transferencias t
+        JOIN instituicoes io ON t.conta_origem_id = io.id
+        WHERE t.conta_destino_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+    '''
+    params_receb = [instituicao_id]
+    
+    if data_inicio:
+        sql_recebidas += ' AND date(t.data_efetivacao) >= date(?)'
+        params_receb.append(data_inicio)
+    if data_fim:
+        sql_recebidas += ' AND date(t.data_efetivacao) <= date(?)'
+        params_receb.append(data_fim)
+    
+    sql_recebidas += ' ORDER BY date(t.data_efetivacao)'
+    
+    transf_recebidas = conn.execute(sql_recebidas, params_receb).fetchall()
+    
+    # Transferências Enviadas
+    sql_enviadas = '''
+        SELECT 
+            date(t.data_efetivacao) as data,
+            t.descricao,
+            'Transferência Enviada' as tipo,
+            NULL as categoria,
+            NULL as categoria_tipo,
+            -t.valor as valor,
+            t.compartilhado,
+            CASE 
+                WHEN t.conta_destino_id IS NOT NULL THEN id.descricao
+                WHEN t.cartao_id IS NOT NULL THEN cc.descricao
+                ELSE 'Desconhecido'
+            END as origem_destino
+        FROM transferencias t
+        LEFT JOIN instituicoes id ON t.conta_destino_id = id.id
+        LEFT JOIN cartoes_credito cc ON t.cartao_id = cc.id
+        WHERE t.conta_origem_id = ?
+        AND t.status = 'Efetivado'
+        AND t.data_efetivacao IS NOT NULL
+    '''
+    params_env = [instituicao_id]
+    
+    if data_inicio:
+        sql_enviadas += ' AND date(t.data_efetivacao) >= date(?)'
+        params_env.append(data_inicio)
+    if data_fim:
+        sql_enviadas += ' AND date(t.data_efetivacao) <= date(?)'
+        params_env.append(data_fim)
+    
+    sql_enviadas += ' ORDER BY date(t.data_efetivacao)'
+    
+    transf_enviadas = conn.execute(sql_enviadas, params_env).fetchall()
+    
+    conn.close()
+    
+    # ===== UNIFICA E ORDENA =====
+    todas_movimentacoes = []
+    
+    for mov in movimentos:
+        todas_movimentacoes.append({
+            'data': mov['data'],
+            'descricao': mov['descricao'],
+            'tipo': mov['tipo'],
+            'categoria': mov['categoria'],
+            'categoria_tipo': mov['categoria_tipo'],
+            'valor': mov['valor'],
+            'compartilhado': mov['compartilhado'],
+            'origem_destino': None
+        })
+    
+    for transf in transf_recebidas:
+        todas_movimentacoes.append({
+            'data': transf['data'],
+            'descricao': transf['descricao'],
+            'tipo': transf['tipo'],
+            'categoria': None,
+            'categoria_tipo': None,
+            'valor': transf['valor'],
+            'compartilhado': transf['compartilhado'],
+            'origem_destino': f"De: {transf['origem_destino']}"
+        })
+    
+    for transf in transf_enviadas:
+        todas_movimentacoes.append({
+            'data': transf['data'],
+            'descricao': transf['descricao'],
+            'tipo': transf['tipo'],
+            'categoria': None,
+            'categoria_tipo': None,
+            'valor': transf['valor'],
+            'compartilhado': transf['compartilhado'],
+            'origem_destino': f"Para: {transf['origem_destino']}"
+        })
+    
+    todas_movimentacoes.sort(key=lambda x: x['data'])
+    
+    # ===== CALCULA SALDOS E TOTAIS =====
+    saldo_atual = saldo_inicial
+    total_entradas = 0.0
+    total_saidas = 0.0
+    
+    for mov in todas_movimentacoes:
+        if mov['valor'] > 0:
+            total_entradas += mov['valor']
+        else:
+            total_saidas += abs(mov['valor'])
+        
+        saldo_atual += mov['valor']
+        mov['saldo_apos'] = saldo_atual
+    
+    saldo_final = saldo_atual
+    
+    # ===== EXPORTA =====
+    if formato == 'excel':
+        return _exportar_extrato_excel(
+            todas_movimentacoes, instituicao_nome, saldo_inicial, 
+            saldo_final, total_entradas, total_saidas, data_inicio, data_fim
+        )
+    else:
+        return _exportar_extrato_csv(
+            todas_movimentacoes, instituicao_nome, saldo_inicial,
+            saldo_final, total_entradas, total_saidas, data_inicio, data_fim
+        )
+
+
+def _exportar_extrato_csv(movimentacoes, instituicao, saldo_inicial, 
+                          saldo_final, total_entradas, total_saidas,
+                          data_inicio=None, data_fim=None):
+    """Exporta extrato bancário para CSV"""
+    
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    
+    # Cabeçalho do extrato
+    writer.writerow(['EXTRATO BANCÁRIO'])
+    writer.writerow(['Conta:', instituicao])
+    
+    periodo = 'Todas as movimentações'
+    if data_inicio and data_fim:
+        periodo = f'{data_inicio} a {data_fim}'
+    elif data_inicio:
+        periodo = f'A partir de {data_inicio}'
+    elif data_fim:
+        periodo = f'Até {data_fim}'
+    
+    writer.writerow(['Período:', periodo])
+    writer.writerow([])  # Linha em branco
+    
+    # Resumo
+    writer.writerow(['RESUMO'])
+    writer.writerow(['Saldo Inicial:', f"{saldo_inicial:.2f}".replace('.', ',')])
+    writer.writerow(['Total Entradas:', f"{total_entradas:.2f}".replace('.', ',')])
+    writer.writerow(['Total Saídas:', f"{total_saidas:.2f}".replace('.', ',')])
+    writer.writerow(['Saldo Final:', f"{saldo_final:.2f}".replace('.', ',')])
+    writer.writerow([])  # Linha em branco
+    
+    # Cabeçalho das movimentações
+    writer.writerow([
+        'Data',
+        'Descrição',
+        'Tipo',
+        'Categoria',
+        'Tipo Categoria',
+        'Detalhes',
+        'Compartilhado',
+        'Valor',
+        'Saldo'
+    ])
+    
+    # Movimentações
+    for mov in movimentacoes:
+        writer.writerow([
+            mov['data'],
+            mov['descricao'],
+            mov['tipo'],
+            mov['categoria'] or '',
+            mov['categoria_tipo'] or '',
+            mov['origem_destino'] or '',
+            mov['compartilhado'],
+            f"{mov['valor']:.2f}".replace('.', ','),
+            f"{mov['saldo_apos']:.2f}".replace('.', ',')
+        ])
+    
+    output.seek(0)
+    
+    # Nome do arquivo
+    periodo_nome = ''
+    if data_inicio and data_fim:
+        periodo_nome = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo_nome = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo_nome = f"_ate_{data_fim}"
+    
+    instituicao_limpa = instituicao.replace(' ', '_').replace('/', '_')
+    filename = f"extrato_{instituicao_limpa}{periodo_nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    
+    return response
+
+
+def _exportar_extrato_excel(movimentacoes, instituicao, saldo_inicial,
+                            saldo_final, total_entradas, total_saidas,
+                            data_inicio=None, data_fim=None):
+    """Exporta extrato bancário para Excel formatado"""
+    
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Extrato Bancário"
+    
+    # Estilos
+    titulo_font = Font(bold=True, size=16, color="1E293B")
+    subtitulo_font = Font(bold=True, size=12, color="475569")
+    header_fill = PatternFill(start_color="10B981", end_color="10B981", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    
+    saldo_inicial_fill = PatternFill(start_color="F0F9FF", end_color="F0F9FF", fill_type="solid")
+    saldo_final_fill = PatternFill(start_color="667EEA", end_color="667EEA", fill_type="solid")
+    saldo_final_font = Font(bold=True, color="FFFFFF", size=12)
+    
+    receita_font = Font(color="059669", bold=True)
+    despesa_font = Font(color="DC2626", bold=True)
+    transferencia_font = Font(color="667EEA", bold=True)
+    
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # ===== CABEÇALHO DO EXTRATO =====
+    row = 1
+    
+    # Título
+    titulo_cell = ws.cell(row=row, column=1, value="EXTRATO BANCÁRIO")
+    titulo_cell.font = titulo_font
+    ws.merge_cells(f'A{row}:I{row}')
+    row += 1
+    
+    # Conta
+    ws.cell(row=row, column=1, value="Conta:").font = Font(bold=True)
+    ws.cell(row=row, column=2, value=instituicao)
+    ws.merge_cells(f'B{row}:I{row}')
+    row += 1
+    
+    # Período
+    periodo = 'Todas as movimentações'
+    if data_inicio and data_fim:
+        periodo = f'{data_inicio} a {data_fim}'
+    elif data_inicio:
+        periodo = f'A partir de {data_inicio}'
+    elif data_fim:
+        periodo = f'Até {data_fim}'
+    
+    ws.cell(row=row, column=1, value="Período:").font = Font(bold=True)
+    ws.cell(row=row, column=2, value=periodo)
+    ws.merge_cells(f'B{row}:I{row}')
+    row += 2  # Linha em branco
+    
+    # ===== RESUMO =====
+    ws.cell(row=row, column=1, value="RESUMO").font = subtitulo_font
+    row += 1
+    
+    # Saldo Inicial
+    ws.cell(row=row, column=1, value="Saldo Inicial:").font = Font(bold=True)
+    saldo_ini_cell = ws.cell(row=row, column=2, value=saldo_inicial)
+    saldo_ini_cell.number_format = '#,##0.00'
+    saldo_ini_cell.font = Font(bold=True, color="1E293B")
+    row += 1
+    
+    # Total Entradas
+    ws.cell(row=row, column=1, value="Total Entradas (+):").font = Font(bold=True)
+    entrada_cell = ws.cell(row=row, column=2, value=total_entradas)
+    entrada_cell.number_format = '#,##0.00'
+    entrada_cell.font = receita_font
+    row += 1
+    
+    # Total Saídas
+    ws.cell(row=row, column=1, value="Total Saídas (-):").font = Font(bold=True)
+    saida_cell = ws.cell(row=row, column=2, value=total_saidas)
+    saida_cell.number_format = '#,##0.00'
+    saida_cell.font = despesa_font
+    row += 1
+    
+    # Saldo Final
+    ws.cell(row=row, column=1, value="Saldo Final:").font = Font(bold=True, size=12)
+    saldo_fin_cell = ws.cell(row=row, column=2, value=saldo_final)
+    saldo_fin_cell.number_format = '#,##0.00'
+    saldo_fin_cell.font = saldo_final_font
+    saldo_fin_cell.fill = saldo_final_fill
+    row += 2  # Linha em branco
+    
+    # ===== MOVIMENTAÇÕES =====
+    ws.cell(row=row, column=1, value="MOVIMENTAÇÕES").font = subtitulo_font
+    row += 1
+    
+    # Cabeçalho da tabela
+    headers = [
+        'Data', 'Descrição', 'Tipo', 'Categoria', 'Detalhes',
+        'Comp.', 'Valor', 'Saldo'
+    ]
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=row, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+    
+    row += 1
+    inicio_dados = row
+    
+    # Linha de Saldo Inicial
+    ws.cell(row=row, column=1, value='').border = border
+    saldo_desc = ws.cell(row=row, column=2, value='SALDO INICIAL')
+    saldo_desc.font = Font(bold=True)
+    saldo_desc.border = border
+    ws.merge_cells(f'B{row}:F{row}')
+    
+    for col in range(3, 7):
+        ws.cell(row=row, column=col).border = border
+    
+    ws.cell(row=row, column=7, value='').border = border
+    
+    saldo_ini_mov = ws.cell(row=row, column=8, value=saldo_inicial)
+    saldo_ini_mov.number_format = '#,##0.00'
+    saldo_ini_mov.font = Font(bold=True)
+    saldo_ini_mov.fill = saldo_inicial_fill
+    saldo_ini_mov.border = border
+    
+    row += 1
+    
+    # Dados das movimentações
+    for mov in movimentacoes:
+        # Data
+        ws.cell(row=row, column=1, value=mov['data']).border = border
+        
+        # Descrição
+        ws.cell(row=row, column=2, value=mov['descricao']).border = border
+        
+        # Tipo
+        tipo_cell = ws.cell(row=row, column=3, value=mov['tipo'])
+        tipo_cell.border = border
+        tipo_cell.font = Font(size=9)
+        
+        # Categoria
+        categoria_texto = mov['categoria'] or ''
+        if mov['categoria_tipo']:
+            categoria_texto += f" ({mov['categoria_tipo']})"
+        ws.cell(row=row, column=4, value=categoria_texto).border = border
+        
+        # Detalhes
+        ws.cell(row=row, column=5, value=mov['origem_destino'] or '').border = border
+        
+        # Compartilhado (abreviado)
+        comp_abrev = mov['compartilhado']
+        if comp_abrev == '100% Silvia':
+            comp_abrev = 'S'
+        elif comp_abrev == '100% Nelson':
+            comp_abrev = 'N'
+        else:
+            comp_abrev = '50/50'
+        
+        comp_cell = ws.cell(row=row, column=6, value=comp_abrev)
+        comp_cell.border = border
+        comp_cell.alignment = Alignment(horizontal='center')
+        comp_cell.font = Font(size=9)
+        
+        # Valor
+        valor_cell = ws.cell(row=row, column=7, value=mov['valor'])
+        valor_cell.number_format = '#,##0.00'
+        valor_cell.border = border
+        
+        if mov['valor'] > 0:
+            valor_cell.font = receita_font
+        else:
+            valor_cell.font = despesa_font
+        
+        # Saldo
+        saldo_cell = ws.cell(row=row, column=8, value=mov['saldo_apos'])
+        saldo_cell.number_format = '#,##0.00'
+        saldo_cell.border = border
+        saldo_cell.font = Font(bold=True)
+        
+        row += 1
+    
+    # Linha de Saldo Final
+    ws.cell(row=row, column=1, value='').border = border
+    saldo_fin_desc = ws.cell(row=row, column=2, value='SALDO FINAL')
+    saldo_fin_desc.font = saldo_final_font
+    saldo_fin_desc.fill = saldo_final_fill
+    saldo_fin_desc.border = border
+    ws.merge_cells(f'B{row}:F{row}')
+    
+    for col in range(3, 7):
+        cell = ws.cell(row=row, column=col)
+        cell.border = border
+        cell.fill = saldo_final_fill
+    
+    ws.cell(row=row, column=7, value='').border = border
+    ws.cell(row=row, column=7).fill = saldo_final_fill
+    
+    saldo_fin_mov = ws.cell(row=row, column=8, value=saldo_final)
+    saldo_fin_mov.number_format = '#,##0.00'
+    saldo_fin_mov.font = saldo_final_font
+    saldo_fin_mov.fill = saldo_final_fill
+    saldo_fin_mov.border = border
+    
+    # Larguras das colunas
+    ws.column_dimensions['A'].width = 12
+    ws.column_dimensions['B'].width = 35
+    ws.column_dimensions['C'].width = 20
+    ws.column_dimensions['D'].width = 20
+    ws.column_dimensions['E'].width = 25
+    ws.column_dimensions['F'].width = 8
+    ws.column_dimensions['G'].width = 15
+    ws.column_dimensions['H'].width = 15
+    
+    # Congela primeira linha da tabela
+    ws.freeze_panes = f'A{inicio_dados}'
+    
+    # Salva
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    # Nome do arquivo
+    periodo_nome = ''
+    if data_inicio and data_fim:
+        periodo_nome = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo_nome = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo_nome = f"_ate_{data_fim}"
+    
+    instituicao_limpa = instituicao.replace(' ', '_').replace('/', '_')
+    filename = f"extrato_{instituicao_limpa}{periodo_nome}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
 # --- ROTAS PLACEHOLDER para Dashboards e Relatórios Futuros ---
 @app.route('/dashboard')
 def dashboard():
@@ -2032,6 +3013,461 @@ def delete_transferencia(id):
     finally:
         conn.close()
     return redirect(url_for('transferencias'))
+
+# ==============================================================================
+# ADICIONE ESTAS ROTAS AO SEU app.py (após as rotas de transferências existentes)
+# ==============================================================================
+
+# --- ROTA PARA EXPORTAR TRANSFERÊNCIAS ---
+@app.route('/transferencias/exportar')
+def exportar_transferencias():
+    """
+    Exporta transferências filtradas para CSV ou Excel
+    Parâmetros aceitos via query string:
+    - formato: 'csv' ou 'excel' (padrão: csv)
+    - data_inicio, data_fim: filtros de data (opcional)
+    - tipo_transferencia, status, compartilhado: filtros adicionais (opcional)
+    - conta_origem_id, conta_destino_id: filtros por conta (opcional)
+    """
+    conn = get_db_connection()
+    
+    # Parâmetros de filtro
+    formato = request.args.get('formato', 'csv').lower()
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    tipo_transferencia = request.args.get('tipo_transferencia')
+    status = request.args.get('status')
+    compartilhado = request.args.get('compartilhado')
+    conta_origem_id = request.args.get('conta_origem_id')
+    conta_destino_id = request.args.get('conta_destino_id')
+    
+    # Monta query com filtros
+    sql = '''
+        SELECT 
+            t.id,
+            date(t.data_transferencia) as data_transferencia,
+            date(t.data_efetivacao) as data_efetivacao,
+            t.descricao,
+            t.tipo_transferencia,
+            io.descricao as conta_origem,
+            id.descricao as conta_destino,
+            cc.descricao as cartao,
+            t.valor,
+            t.status,
+            t.compartilhado
+        FROM transferencias t
+        JOIN instituicoes io ON t.conta_origem_id = io.id
+        LEFT JOIN instituicoes id ON t.conta_destino_id = id.id
+        LEFT JOIN cartoes_credito cc ON t.cartao_id = cc.id
+        WHERE 1=1
+    '''
+    
+    params = []
+    
+    if data_inicio:
+        sql += ' AND t.data_transferencia >= ?'
+        params.append(data_inicio)
+    
+    if data_fim:
+        sql += ' AND t.data_transferencia <= ?'
+        params.append(data_fim)
+    
+    if tipo_transferencia:
+        sql += ' AND t.tipo_transferencia = ?'
+        params.append(tipo_transferencia)
+    
+    if status:
+        sql += ' AND t.status = ?'
+        params.append(status)
+    
+    if compartilhado:
+        sql += ' AND t.compartilhado = ?'
+        params.append(compartilhado)
+    
+    if conta_origem_id:
+        sql += ' AND t.conta_origem_id = ?'
+        params.append(conta_origem_id)
+    
+    if conta_destino_id:
+        sql += ' AND t.conta_destino_id = ?'
+        params.append(conta_destino_id)
+    
+    sql += ' ORDER BY t.data_transferencia DESC, t.id DESC'
+    
+    # Busca dados
+    transferencias = conn.execute(sql, params).fetchall()
+    conn.close()
+    
+    if not transferencias:
+        flash('Nenhuma transferência encontrada para exportação.', 'warning')
+        return redirect(url_for('transferencias'))
+    
+    # Exporta no formato escolhido
+    if formato == 'excel':
+        return _exportar_transferencias_excel(transferencias, data_inicio, data_fim)
+    else:
+        return _exportar_transferencias_csv(transferencias, data_inicio, data_fim)
+
+
+def _exportar_transferencias_csv(transferencias, data_inicio=None, data_fim=None):
+    """Exporta transferências para CSV"""
+    
+    # Cria buffer de memória
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';', quoting=csv.QUOTE_MINIMAL)
+    
+    # Cabeçalho
+    writer.writerow([
+        'ID',
+        'Data Transferência',
+        'Data Efetivação',
+        'Descrição',
+        'Tipo',
+        'Conta Origem',
+        'Conta Destino',
+        'Cartão',
+        'Valor',
+        'Status',
+        'Compartilhado'
+    ])
+    
+    # Dados
+    for transf in transferencias:
+        # Define destino baseado no tipo
+        destino = ''
+        if transf['tipo_transferencia'] == 'Pagamento Fatura':
+            destino = transf['cartao'] or ''
+        else:
+            destino = transf['conta_destino'] or ''
+        
+        writer.writerow([
+            transf['id'],
+            transf['data_transferencia'],
+            transf['data_efetivacao'] or '',
+            transf['descricao'],
+            transf['tipo_transferencia'],
+            transf['conta_origem'],
+            destino,
+            transf['cartao'] if transf['tipo_transferencia'] == 'Pagamento Fatura' else '',
+            f"{transf['valor']:.2f}".replace('.', ','),
+            transf['status'],
+            transf['compartilhado']
+        ])
+    
+    # Prepara resposta
+    output.seek(0)
+    
+    # Nome do arquivo com período
+    periodo = ''
+    if data_inicio and data_fim:
+        periodo = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo = f"_ate_{data_fim}"
+    
+    filename = f"transferencias{periodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    
+    return response
+
+
+def _exportar_transferencias_excel(transferencias, data_inicio=None, data_fim=None):
+    """Exporta transferências para Excel com formatação"""
+    
+    # Cria workbook
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Transferências"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="667EEA", end_color="667EEA", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF", size=11)
+    border = Border(
+        left=Side(style='thin'),
+        right=Side(style='thin'),
+        top=Side(style='thin'),
+        bottom=Side(style='thin')
+    )
+    
+    # Cabeçalho
+    headers = [
+        'ID', 'Data Transf.', 'Data Efetiv.', 'Descrição', 'Tipo',
+        'Conta Origem', 'Destino', 'Valor', 'Status', 'Compartilhado'
+    ]
+    
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center', vertical='center')
+        cell.border = border
+    
+    # Dados
+    for row_num, transf in enumerate(transferencias, 2):
+        # ID
+        ws.cell(row=row_num, column=1, value=transf['id']).border = border
+        
+        # Datas
+        ws.cell(row=row_num, column=2, value=transf['data_transferencia']).border = border
+        ws.cell(row=row_num, column=3, value=transf['data_efetivacao'] or '').border = border
+        
+        # Descrição
+        ws.cell(row=row_num, column=4, value=transf['descricao']).border = border
+        
+        # Tipo - com cores
+        tipo_cell = ws.cell(row=row_num, column=5, value=transf['tipo_transferencia'])
+        tipo_cell.border = border
+        
+        if transf['tipo_transferencia'] == 'Pagamento Fatura':
+            tipo_cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+            tipo_cell.font = Font(color="92400E", bold=True)
+        elif transf['tipo_transferencia'] == 'Para Investimento':
+            tipo_cell.fill = PatternFill(start_color="DBEAFE", end_color="DBEAFE", fill_type="solid")
+            tipo_cell.font = Font(color="1E40AF", bold=True)
+        elif transf['tipo_transferencia'] == 'De Investimento':
+            tipo_cell.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+            tipo_cell.font = Font(color="065F46", bold=True)
+        
+        # Conta Origem
+        ws.cell(row=row_num, column=6, value=transf['conta_origem']).border = border
+        
+        # Destino (conta ou cartão)
+        if transf['tipo_transferencia'] == 'Pagamento Fatura':
+            destino_valor = f"💳 {transf['cartao']}" if transf['cartao'] else ''
+        else:
+            destino_valor = transf['conta_destino'] or ''
+        
+        ws.cell(row=row_num, column=7, value=destino_valor).border = border
+        
+        # Valor com formatação
+        valor_cell = ws.cell(row=row_num, column=8, value=transf['valor'])
+        valor_cell.number_format = '#,##0.00'
+        valor_cell.border = border
+        valor_cell.font = Font(color="667EEA", bold=True)
+        
+        # Status
+        status_cell = ws.cell(row=row_num, column=9, value=transf['status'])
+        status_cell.border = border
+        
+        if transf['status'] == 'Efetivado':
+            status_cell.fill = PatternFill(start_color="D1FAE5", end_color="D1FAE5", fill_type="solid")
+            status_cell.font = Font(color="065F46", bold=True)
+        else:
+            status_cell.fill = PatternFill(start_color="FEF3C7", end_color="FEF3C7", fill_type="solid")
+            status_cell.font = Font(color="92400E")
+        
+        # Compartilhado
+        ws.cell(row=row_num, column=10, value=transf['compartilhado']).border = border
+    
+    # Ajusta largura das colunas
+    column_widths = {
+        'A': 8,   # ID
+        'B': 14,  # Data Transf.
+        'C': 14,  # Data Efetiv.
+        'D': 35,  # Descrição
+        'E': 20,  # Tipo
+        'F': 20,  # Conta Origem
+        'G': 20,  # Destino
+        'H': 15,  # Valor
+        'I': 12,  # Status
+        'J': 15   # Compartilhado
+    }
+    
+    for col, width in column_widths.items():
+        ws.column_dimensions[col].width = width
+    
+    # Congela primeira linha
+    ws.freeze_panes = 'A2'
+    
+    # Adiciona totalizadores
+    ultima_linha = len(transferencias) + 2
+    
+    ws.cell(row=ultima_linha, column=7, value='TOTAL TRANSFERIDO:').font = Font(bold=True)
+    ws.cell(row=ultima_linha, column=7).alignment = Alignment(horizontal='right')
+    
+    total_formula = f'=SUM(H2:H{ultima_linha-1})'
+    total_cell = ws.cell(row=ultima_linha, column=8, value=total_formula)
+    total_cell.font = Font(bold=True, size=12, color="667EEA")
+    total_cell.number_format = '#,##0.00'
+    total_cell.fill = PatternFill(start_color="F0F0F0", end_color="F0F0F0", fill_type="solid")
+    total_cell.border = border
+    
+    # Adiciona estatísticas extras
+    stats_row = ultima_linha + 2
+    
+    ws.cell(row=stats_row, column=1, value='ESTATÍSTICAS:').font = Font(bold=True, size=11)
+    ws.merge_cells(f'A{stats_row}:J{stats_row}')
+    
+    # Total por tipo
+    tipos = {}
+    for transf in transferencias:
+        tipo = transf['tipo_transferencia']
+        if tipo not in tipos:
+            tipos[tipo] = 0
+        tipos[tipo] += transf['valor']
+    
+    stat_row = stats_row + 1
+    for tipo, total in tipos.items():
+        ws.cell(row=stat_row, column=1, value=f'{tipo}:').font = Font(bold=True)
+        ws.cell(row=stat_row, column=2, value=total).number_format = '#,##0.00'
+        stat_row += 1
+    
+    # Salva em buffer
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    # Nome do arquivo
+    periodo = ''
+    if data_inicio and data_fim:
+        periodo = f"_{data_inicio}_a_{data_fim}"
+    elif data_inicio:
+        periodo = f"_desde_{data_inicio}"
+    elif data_fim:
+        periodo = f"_ate_{data_fim}"
+    
+    filename = f"transferencias{periodo}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
+
+# --- ROTA PARA EXPORTAR FLUXO ENTRE CONTAS ---
+@app.route('/transferencias/exportar-fluxo')
+def exportar_fluxo_contas():
+    """
+    Exporta análise de fluxo entre contas
+    Mostra quanto foi transferido de cada conta para cada conta
+    """
+    conn = get_db_connection()
+    
+    # Parâmetros
+    data_inicio = request.args.get('data_inicio')
+    data_fim = request.args.get('data_fim')
+    formato = request.args.get('formato', 'excel').lower()
+    
+    # Query para fluxo entre contas
+    sql = '''
+        SELECT 
+            io.descricao as origem,
+            id.descricao as destino,
+            t.tipo_transferencia,
+            SUM(t.valor) as total,
+            COUNT(*) as quantidade
+        FROM transferencias t
+        JOIN instituicoes io ON t.conta_origem_id = io.id
+        LEFT JOIN instituicoes id ON t.conta_destino_id = id.id
+        WHERE t.status = 'Efetivado'
+    '''
+    
+    params = []
+    
+    if data_inicio:
+        sql += ' AND t.data_transferencia >= ?'
+        params.append(data_inicio)
+    
+    if data_fim:
+        sql += ' AND t.data_transferencia <= ?'
+        params.append(data_fim)
+    
+    sql += ' GROUP BY io.descricao, id.descricao, t.tipo_transferencia ORDER BY total DESC'
+    
+    fluxo = conn.execute(sql, params).fetchall()
+    conn.close()
+    
+    if not fluxo:
+        flash('Nenhum dado encontrado para exportação do fluxo.', 'warning')
+        return redirect(url_for('transferencias'))
+    
+    # Exporta
+    if formato == 'excel':
+        return _exportar_fluxo_excel(fluxo, data_inicio, data_fim)
+    else:
+        return _exportar_fluxo_csv(fluxo, data_inicio, data_fim)
+
+
+def _exportar_fluxo_csv(fluxo, data_inicio=None, data_fim=None):
+    """Exporta fluxo entre contas para CSV"""
+    output = StringIO()
+    writer = csv.writer(output, delimiter=';')
+    
+    writer.writerow(['Conta Origem', 'Destino', 'Tipo', 'Total', 'Quantidade'])
+    
+    for row in fluxo:
+        writer.writerow([
+            row['origem'],
+            row['destino'] or 'N/A',
+            row['tipo_transferencia'],
+            f"{row['total']:.2f}".replace('.', ','),
+            row['quantidade']
+        ])
+    
+    output.seek(0)
+    
+    filename = f"fluxo_contas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+    
+    response = make_response(output.getvalue())
+    response.headers['Content-Disposition'] = f'attachment; filename={filename}'
+    response.headers['Content-Type'] = 'text/csv; charset=utf-8-sig'
+    
+    return response
+
+
+def _exportar_fluxo_excel(fluxo, data_inicio=None, data_fim=None):
+    """Exporta fluxo entre contas para Excel"""
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "Fluxo Entre Contas"
+    
+    # Estilos
+    header_fill = PatternFill(start_color="667EEA", end_color="667EEA", fill_type="solid")
+    header_font = Font(bold=True, color="FFFFFF")
+    
+    # Cabeçalho
+    headers = ['Conta Origem', 'Destino', 'Tipo', 'Total', 'Quantidade']
+    for col_num, header in enumerate(headers, 1):
+        cell = ws.cell(row=1, column=col_num, value=header)
+        cell.fill = header_fill
+        cell.font = header_font
+        cell.alignment = Alignment(horizontal='center')
+    
+    # Dados
+    for row_num, row in enumerate(fluxo, 2):
+        ws.cell(row=row_num, column=1, value=row['origem'])
+        ws.cell(row=row_num, column=2, value=row['destino'] or 'N/A')
+        ws.cell(row=row_num, column=3, value=row['tipo_transferencia'])
+        ws.cell(row=row_num, column=4, value=row['total']).number_format = '#,##0.00'
+        ws.cell(row=row_num, column=5, value=row['quantidade'])
+    
+    # Larguras
+    ws.column_dimensions['A'].width = 20
+    ws.column_dimensions['B'].width = 20
+    ws.column_dimensions['C'].width = 25
+    ws.column_dimensions['D'].width = 15
+    ws.column_dimensions['E'].width = 12
+    
+    # Salva
+    output = BytesIO()
+    wb.save(output)
+    output.seek(0)
+    
+    filename = f"fluxo_contas_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
+    
+    return send_file(
+        output,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename
+    )
+
 
 @app.route('/relatorio/cartoes')
 def relatorio_cartoes():

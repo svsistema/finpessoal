@@ -3,171 +3,253 @@
 {% block title %}Transferências{% endblock %}
 
 {% block content %}
-    <h2>Transferências e Pagamentos</h2>
-
-    <form method="POST" action="{{ url_for('add_transferencia') }}">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-                <label for="data_transferencia">Data da Transferência:</label>
-                <input type="date" name="data_transferencia" required>
-            </div>
-            <div class="form-group">
-                <label for="data_efetivacao">Data de Efetivação (opcional):</label>
-                <input type="date" name="data_efetivacao">
-            </div>
-        </div>
-        
-        <div class="form-group">
-            <label for="tipo_transferencia">Tipo de Operação:*</label>
-            <select name="tipo_transferencia" id="tipo_transferencia" required onchange="alterarTipoTransferencia()">
-                <option value="">-- Selecione --</option>
-                <option value="Entre Contas">Transferência Entre Contas</option>
-                <option value="Pagamento Fatura">Pagamento de Fatura de Cartão</option>
-                <option value="Para Investimento">Aplicação em Investimento</option>
-                <option value="De Investimento">Resgate de Investimento</option>
-            </select>
-        </div>
-        
-        <div class="form-group">
-            <label for="descricao">Descrição:</label>
-            <input type="text" name="descricao" id="descricao" required autocomplete="off" placeholder="Ex: Transferência para poupança">
-        </div>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-                <label for="conta_origem_id">Conta de Origem:*</label>
-                <select name="conta_origem_id" required>
-                    <option value="">-- Selecione --</option>
-                    {% for inst in instituicoes %}
-                    <option value="{{ inst.id }}">{{ inst.descricao }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group" id="div_conta_destino">
-                <label for="conta_destino_id">Conta de Destino:*</label>
-                <select name="conta_destino_id" id="conta_destino_id">
-                    <option value="">-- Selecione --</option>
-                    {% for inst in instituicoes %}
-                    <option value="{{ inst.id }}">{{ inst.descricao }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group" id="div_cartao" style="display: none;">
-                <label for="cartao_id">Cartão de Crédito:*</label>
-                <select name="cartao_id" id="cartao_id">
-                    <option value="">-- Selecione --</option>
-                    {% for cartao in cartoes %}
-                    <option value="{{ cartao.id }}">{{ cartao.descricao }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            
-            <div class="form-group">
-                <label for="valor">Valor (R$):*</label>
-                <input type="number" name="valor" step="0.01" min="0.01" required placeholder="Ex: 500.00">
-            </div>
-        </div>
-        
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group">
-                <label for="status">Status:*</label>
-                <select name="status" required>
-                    <option value="Pendente">Pendente</option>
-                    <option value="Efetivado">Efetivado</option>
-                </select>
-            </div>
-            <div class="form-group">
-                <label for="compartilhado">Compartilhado:*</label>
-                <select name="compartilhado" required>
-                    <option value="100% Silvia">100% Silvia</option>
-                    <option value="100% Nelson">100% Nelson</option>
-                    <option value="50/50">50/50</option>
-                </select>
-            </div>
-        </div>
-        
-        <button type="submit" class="btn btn-primary">Registrar</button>
-    </form>
-
-    <h2 style="margin-top: 2rem;">Histórico de Transferências e Pagamentos</h2>
-
-    <div class="action-buttons" style="margin-bottom: 1rem;">
-        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
-        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
-    </div>
-    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
-
-    <div style="overflow-x: auto;">
-        <table style="font-size: 0.9em;">
-            <thead>
-                <tr>
-                    <th style="width: 5%;"></th>
-                    <th>Data</th>
-                    <th>Data Efet.</th>
-                    <th>Descrição</th>
-                    <th>Tipo</th>
-                    <th>Origem</th>
-                    <th>→</th>
-                    <th>Destino/Cartão</th>
-                    <th>Valor</th>
-                    <th>Status</th>
-                    <th>Compartilhado</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for transf in transferencias %}
-                <tr id="row-{{ transf.id }}">
-                    <td><input type="radio" name="selecionado" value="{{ transf.id }}" onchange="itemSelecionado(this, 'transferencias')"></td>
-                    <td>{{ transf.data_transf_formatada }}</td>
-                    <td>{{ transf.data_efet_formatada or '---' }}</td>
-                    <td>{{ transf.descricao }}</td>
-                    <td>
-                        {% if transf.tipo_transferencia == 'Pagamento Fatura' %}
-                            <span class="badge badge-warning">Pag. Fatura</span>
-                        {% elif transf.tipo_transferencia == 'Para Investimento' %}
-                            <span class="badge badge-info">→ Invest.</span>
-                        {% elif transf.tipo_transferencia == 'De Investimento' %}
-                            <span class="badge badge-success">← Invest.</span>
-                        {% else %}
-                            <span class="badge badge-gray">Transferência</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ transf.conta_origem_nome }}</td>
-                    <td style="text-align: center; color: #667eea; font-weight: bold;">→</td>
-                    <td>
-                        {% if transf.tipo_transferencia == 'Pagamento Fatura' %}
-                            💳 {{ transf.cartao_nome }}
-                        {% else %}
-                            {{ transf.conta_destino_nome }}
-                        {% endif %}
-                    </td>
-                    <td style="text-align: right; color: #667eea; font-weight: bold;">
-                        {{ format_brl(transf.valor) }}
-                    </td>
-                    <td>
-                        {% if transf.status == 'Efetivado' %}
-                            <span class="badge badge-success">Efetivado</span>
-                        {% else %}
-                            <span class="badge badge-warning">Pendente</span>
-                        {% endif %}
-                    </td>
-                    <td>{{ transf.compartilhado }}</td>
-                </tr>
-                {% else %}
-                <tr><td colspan="11">Nenhuma transferência registrada.</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
+    <div class="page-header">
+        <h1>Transferências e Pagamentos</h1>
+        <p>Movimentações entre contas, pagamentos de faturas e aplicações</p>
     </div>
 
-    <div class="alert alert-info" style="margin-top: 2rem;">
+    <!-- FORMULÁRIO DE NOVA TRANSFERÊNCIA -->
+    <div class="card">
+        <div class="card-title">Nova Transferência/Pagamento</div>
+        
+        <form method="POST" action="{{ url_for('add_transferencia') }}">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="data_transferencia">Data da Transferência:</label>
+                    <input type="date" name="data_transferencia" required>
+                </div>
+                <div class="form-group">
+                    <label for="data_efetivacao">Data de Efetivação (opcional):</label>
+                    <input type="date" name="data_efetivacao">
+                </div>
+            </div>
+            
+            <div class="form-group">
+                <label for="tipo_transferencia">Tipo de Operação:*</label>
+                <select name="tipo_transferencia" id="tipo_transferencia" required onchange="alterarTipoTransferencia()">
+                    <option value="">-- Selecione --</option>
+                    <option value="Entre Contas">Transferência Entre Contas</option>
+                    <option value="Pagamento Fatura">Pagamento de Fatura de Cartão</option>
+                    <option value="Para Investimento">Aplicação em Investimento</option>
+                    <option value="De Investimento">Resgate de Investimento</option>
+                </select>
+            </div>
+            
+            <div class="form-group">
+                <label for="descricao">Descrição:</label>
+                <input type="text" name="descricao" id="descricao" required autocomplete="off" placeholder="Ex: Transferência para poupança">
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="conta_origem_id">Conta de Origem:*</label>
+                    <select name="conta_origem_id" required>
+                        <option value="">-- Selecione --</option>
+                        {% for inst in instituicoes %}
+                        <option value="{{ inst.id }}">{{ inst.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="form-group" id="div_conta_destino">
+                    <label for="conta_destino_id">Conta de Destino:*</label>
+                    <select name="conta_destino_id" id="conta_destino_id">
+                        <option value="">-- Selecione --</option>
+                        {% for inst in instituicoes %}
+                        <option value="{{ inst.id }}">{{ inst.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="form-group" id="div_cartao" style="display: none;">
+                    <label for="cartao_id">Cartão de Crédito:*</label>
+                    <select name="cartao_id" id="cartao_id">
+                        <option value="">-- Selecione --</option>
+                        {% for cartao in cartoes %}
+                        <option value="{{ cartao.id }}">{{ cartao.descricao }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                
+                <div class="form-group">
+                    <label for="valor">Valor (R$):*</label>
+                    <input type="number" name="valor" step="0.01" min="0.01" required placeholder="Ex: 500.00">
+                </div>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group">
+                    <label for="status">Status:*</label>
+                    <select name="status" required>
+                        <option value="Pendente">Pendente</option>
+                        <option value="Efetivado">Efetivado</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label for="compartilhado">Compartilhado:*</label>
+                    <select name="compartilhado" required>
+                        <option value="100% Silvia">100% Silvia</option>
+                        <option value="100% Nelson">100% Nelson</option>
+                        <option value="50/50">50/50</option>
+                    </select>
+                </div>
+            </div>
+            
+            <button type="submit" class="btn btn-primary">Registrar</button>
+        </form>
+    </div>
+
+    <!-- FILTROS E EXPORTAÇÃO -->
+    <div class="card">
+        <div class="card-title">Filtros e Exportação</div>
+        
+        <form method="GET" action="{{ url_for('transferencias') }}" id="form-filtros">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="data_inicio">Data Início:</label>
+                    <input type="date" name="data_inicio" id="filter_data_inicio" value="{{ request.args.get('data_inicio', '') }}">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="data_fim">Data Fim:</label>
+                    <input type="date" name="data_fim" id="filter_data_fim" value="{{ request.args.get('data_fim', '') }}">
+                </div>
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+                <a href="{{ url_for('transferencias') }}" class="btn btn-secondary" style="text-align: center;">Limpar Filtro</a>
+            </div>
+        </form>
+        
+        <!-- BOTÕES DE EXPORTAÇÃO -->
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="font-size: 14px; font-weight: 600; color: #1e293b; margin: 0;">
+                    📥 Exportar Transferências
+                </h3>
+                <span style="font-size: 12px; color: #64748b;">
+                    {{ transferencias|length }} transferência(s) encontrada(s)
+                </span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                <!-- Exportar Detalhado CSV -->
+                <button onclick="exportarTransferencias('csv')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📄</span>
+                    <span>Exportar CSV</span>
+                </button>
+                
+                <!-- Exportar Detalhado Excel -->
+                <button onclick="exportarTransferencias('excel')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📊</span>
+                    <span>Exportar Excel</span>
+                </button>
+                
+                <!-- Exportar Fluxo Excel -->
+                <button onclick="exportarFluxo('excel')" class="btn" style="background: #667eea; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">🔄</span>
+                    <span>Fluxo Entre Contas</span>
+                </button>
+                
+                <!-- Exportar Fluxo CSV -->
+                <button onclick="exportarFluxo('csv')" class="btn" style="background: #667eea; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📋</span>
+                    <span>Fluxo CSV</span>
+                </button>
+            </div>
+            
+            <div class="alert alert-info" style="margin-top: 15px; padding: 12px;">
+                <strong>ℹ️ Sobre a Exportação:</strong>
+                <ul style="margin: 8px 0 0 20px; font-size: 13px;">
+                    <li><strong>CSV/Excel Detalhado:</strong> Lista completa de todas as transferências com origem, destino e valores</li>
+                    <li><strong>Fluxo Entre Contas:</strong> Resumo consolidado mostrando quanto foi transferido de cada conta para cada destino</li>
+                    <li><strong>Excel Formatado:</strong> Inclui cores por tipo de operação, totalizadores e estatísticas</li>
+                    <li>Os filtros de data aplicados acima serão respeitados na exportação</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABELA DE TRANSFERÊNCIAS -->
+    <div class="card">
+        <div class="card-title">Histórico de Transferências e Pagamentos</div>
+        
+        <div class="action-buttons" style="margin-bottom: 1rem;">
+            <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+            <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+        </div>
+        <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+
+        <div class="table-container">
+            <table style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;"></th>
+                        <th>Data</th>
+                        <th>Data Efet.</th>
+                        <th>Descrição</th>
+                        <th>Tipo</th>
+                        <th>Origem</th>
+                        <th style="text-align: center;">→</th>
+                        <th>Destino/Cartão</th>
+                        <th style="text-align: right;">Valor</th>
+                        <th>Status</th>
+                        <th>Compartilhado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for transf in transferencias %}
+                    <tr id="row-{{ transf.id }}">
+                        <td><input type="radio" name="selecionado" value="{{ transf.id }}" onchange="itemSelecionado(this, 'transferencias')"></td>
+                        <td>{{ transf.data_transf_formatada }}</td>
+                        <td>{{ transf.data_efet_formatada or '---' }}</td>
+                        <td>{{ transf.descricao }}</td>
+                        <td>
+                            {% if transf.tipo_transferencia == 'Pagamento Fatura' %}
+                                <span class="badge badge-warning">Pag. Fatura</span>
+                            {% elif transf.tipo_transferencia == 'Para Investimento' %}
+                                <span class="badge badge-info">→ Invest.</span>
+                            {% elif transf.tipo_transferencia == 'De Investimento' %}
+                                <span class="badge badge-success">← Invest.</span>
+                            {% else %}
+                                <span class="badge badge-gray">Transferência</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ transf.conta_origem_nome }}</td>
+                        <td style="text-align: center; color: #667eea; font-weight: bold; font-size: 18px;">→</td>
+                        <td>
+                            {% if transf.tipo_transferencia == 'Pagamento Fatura' %}
+                                💳 {{ transf.cartao_nome }}
+                            {% else %}
+                                {{ transf.conta_destino_nome }}
+                            {% endif %}
+                        </td>
+                        <td style="text-align: right; color: #667eea; font-weight: bold;">
+                            {{ format_brl(transf.valor) }}
+                        </td>
+                        <td>
+                            {% if transf.status == 'Efetivado' %}
+                                <span class="badge badge-success">Efetivado</span>
+                            {% else %}
+                                <span class="badge badge-warning">Pendente</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ transf.compartilhado }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="11" style="text-align: center; padding: 40px; color: #64748b;">
+                        Nenhuma transferência registrada.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <div class="alert alert-info">
         <strong>ℹ️ Importante:</strong> 
         <ul style="margin: 10px 0 0 20px;">
             <li><strong>Transferências:</strong> Não afetam receitas/despesas, apenas movimentam entre contas</li>
             <li><strong>Pagamento de Fatura:</strong> Reduz o saldo bancário mas NÃO conta como despesa (as compras já foram registradas)</li>
             <li><strong>Investimentos:</strong> Registre aqui a movimentação e depois lance a operação em "Lançar Invest."</li>
+            <li><strong>Exportação:</strong> Use os botões acima para gerar relatórios completos das transferências</li>
         </ul>
     </div>
 
@@ -204,6 +286,43 @@
                     descricao.value = 'Transferência entre contas';
                 }
             }
+        }
+        
+        // Função para exportar transferências detalhadas
+        function exportarTransferencias(formato) {
+            const dataInicio = document.getElementById('filter_data_inicio').value;
+            const dataFim = document.getElementById('filter_data_fim').value;
+            
+            let url = `/transferencias/exportar?formato=${formato}`;
+            
+            if (dataInicio) {
+                url += `&data_inicio=${dataInicio}`;
+            }
+            
+            if (dataFim) {
+                url += `&data_fim=${dataFim}`;
+            }
+            
+            // Abre em nova aba para download
+            window.location.href = url;
+        }
+        
+        // Função para exportar fluxo entre contas
+        function exportarFluxo(formato) {
+            const dataInicio = document.getElementById('filter_data_inicio').value;
+            const dataFim = document.getElementById('filter_data_fim').value;
+            
+            let url = `/transferencias/exportar-fluxo?formato=${formato}`;
+            
+            if (dataInicio) {
+                url += `&data_inicio=${dataInicio}`;
+            }
+            
+            if (dataFim) {
+                url += `&data_fim=${dataFim}`;
+            }
+            
+            window.location.href = url;
         }
     </script>
 {% endblock %}

@@ -3,83 +3,197 @@
 {% block title %}Lançamento de Movimentos{% endblock %}
 
 {% block content %}
-    <h2>Lançamento de Movimentos</h2>
-
-    <form method="POST" action="{{ url_for('add_movimento') }}">
-        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
-            <div class="form-group"><label for="data_movimento">Data do Movimento:</label><input type="date" name="data_movimento" required></div>
-            <div class="form-group"><label for="data_efetivacao">Data de Efetivação (opcional):</label><input type="date" name="data_efetivacao"></div>
-        </div>
-        <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" required autocomplete="off"></div>
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-            <div class="form-group"><label for="categoria_id">Categoria:</label><select name="categoria_id" required><option value="">-- Selecione --</option>{% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.descricao }} ({{ cat.tipo }})</option>{% endfor %}</select></div>
-            <div class="form-group"><label for="instituicao_id">Conta / Banco:</label><select name="instituicao_id" required><option value="">-- Selecione --</option>{% for inst in instituicoes %}<option value="{{ inst.id }}">{{ inst.descricao }}</option>{% endfor %}</select></div>
-            <div class="form-group"><label for="cartao_id">Cartão de Crédito (opcional):</label><select name="cartao_id"><option value="">-- Nenhum --</option>{% for cartao in cartoes %}<option value="{{ cartao.id }}">{{ cartao.descricao }}</option>{% endfor %}</select></div>
-        </div>
-         <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
-            <div class="form-group"><label for="valor">Valor (R$):</label><input type="number" name="valor" step="0.01" min="0" required placeholder="Use apenas números positivos"></div>
-             <div class="form-group"><label for="status">Status:</label><select name="status" required><option value="Pendente">Pendente</option><option value="Efetivado">Efetivado</option></select></div>
-            <div class="form-group"><label for="compartilhado">Compartilhado:</label><select name="compartilhado" required><option value="100% Silvia">100% Silvia</option><option value="100% Nelson">100% Nelson</option><option value="50/50">50/50</option></select></div>
-        </div>
-        <button type="submit" class="btn btn-primary">Adicionar Movimento</button>
-    </form>
-
-    <h2 style="margin-top: 2rem;">Movimentos Lançados</h2>
-
-    <form method="GET" action="{{ url_for('movimentos') }}" style="margin: 1.5rem 0; background-color: #f9f9f9; padding: 1rem; border-radius: 8px;">
-        <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="data_inicio">Data Início:</label>
-                <input type="date" name="data_inicio" value="{{ data_inicio or '' }}">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-                <label for="data_fim">Data Fim:</label>
-                <input type="date" name="data_fim" value="{{ data_fim or '' }}">
-            </div>
-            <button type="submit" class="btn btn-primary">Filtrar</button>
-            <a href="{{ url_for('movimentos') }}" class="btn btn-secondary" style="text-align: center;">Limpar Filtro</a>
-        </div>
-    </form>
-    <div class="action-buttons" style="margin-bottom: 1rem;">
-        <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
-        <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+    <div class="page-header">
+        <h1>Lançamento de Movimentos</h1>
+        <p>Cadastro de receitas e despesas</p>
     </div>
-    <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
 
-    <table style="font-size: 0.9em;">
-        <thead>
-            <tr>
-                <th style="width: 5%;"></th>
-                <th>Data Mov.</th>
-                <th>Data Efet.</th>
-                <th>Descrição</th>
-                <th>Categoria</th>
-                <th>Conta</th>
-                <th>Cartão</th>
-                <th>Valor</th>
-                <th>Status</th>
-                <th>Compartilhado</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for mov in movimentos %}
-            <tr id="row-{{ mov.id }}">
-                <td><input type="radio" name="selecionado" value="{{ mov.id }}" onchange="itemSelecionado(this, 'movimentos')"></td>
-                <td>{{ mov.data_mov_formatada }}</td>
-                <td>{{ mov.data_efet_formatada or '---' }}</td>
-                <td>{{ mov.descricao }}</td>
-                <td>{{ mov.categoria_nome }}</td>
-                <td>{{ mov.instituicao_nome }}</td>
-                <td>{{ mov.cartao_nome or '---' }}</td>
-                <td style="color: {% if mov.categoria_tipo == 'Receita' %}green{% else %}red{% endif %};">
-                    R$ {{ "%.2f"|format(mov.valor|abs) }}
-                </td>
-                <td>{{ mov.status }}</td>
-                <td>{{ mov.compartilhado }}</td>
-            </tr>
-            {% else %}
-            <tr><td colspan="10">Nenhum movimento encontrado para o período.</td></tr>
-            {% endfor %}
-        </tbody>
-    </table>
+    <!-- FORMULÁRIO DE NOVO MOVIMENTO -->
+    <div class="card">
+        <div class="card-title">Novo Movimento</div>
+        
+        <form method="POST" action="{{ url_for('add_movimento') }}">
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="form-group"><label for="data_movimento">Data do Movimento:</label><input type="date" name="data_movimento" required></div>
+                <div class="form-group"><label for="data_efetivacao">Data de Efetivação (opcional):</label><input type="date" name="data_efetivacao"></div>
+            </div>
+            <div class="form-group"><label for="descricao">Descrição:</label><input type="text" name="descricao" required autocomplete="off"></div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group"><label for="categoria_id">Categoria:</label><select name="categoria_id" required><option value="">-- Selecione --</option>{% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.descricao }} ({{ cat.tipo }})</option>{% endfor %}</select></div>
+                <div class="form-group"><label for="instituicao_id">Conta / Banco:</label><select name="instituicao_id" required><option value="">-- Selecione --</option>{% for inst in instituicoes %}<option value="{{ inst.id }}">{{ inst.descricao }}</option>{% endfor %}</select></div>
+                <div class="form-group"><label for="cartao_id">Cartão de Crédito (opcional):</label><select name="cartao_id"><option value="">-- Nenhum --</option>{% for cartao in cartoes %}<option value="{{ cartao.id }}">{{ cartao.descricao }}</option>{% endfor %}</select></div>
+            </div>
+             <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 1rem;">
+                <div class="form-group"><label for="valor">Valor (R$):</label><input type="number" name="valor" step="0.01" min="0" required placeholder="Use apenas números positivos"></div>
+                 <div class="form-group"><label for="status">Status:</label><select name="status" required><option value="Pendente">Pendente</option><option value="Efetivado">Efetivado</option></select></div>
+                <div class="form-group"><label for="compartilhado">Compartilhado:</label><select name="compartilhado" required><option value="100% Silvia">100% Silvia</option><option value="100% Nelson">100% Nelson</option><option value="50/50">50/50</option></select></div>
+            </div>
+            <button type="submit" class="btn btn-primary">Adicionar Movimento</button>
+        </form>
+    </div>
+
+    <!-- FILTROS E EXPORTAÇÃO -->
+    <div class="card">
+        <div class="card-title">Filtros e Exportação</div>
+        
+        <form method="GET" action="{{ url_for('movimentos') }}" id="form-filtros">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 1rem; align-items: flex-end;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="data_inicio">Data Início:</label>
+                    <input type="date" name="data_inicio" id="filter_data_inicio" value="{{ data_inicio or '' }}">
+                </div>
+                <div class="form-group" style="margin-bottom: 0;">
+                    <label for="data_fim">Data Fim:</label>
+                    <input type="date" name="data_fim" id="filter_data_fim" value="{{ data_fim or '' }}">
+                </div>
+                <button type="submit" class="btn btn-primary">Filtrar</button>
+                <a href="{{ url_for('movimentos') }}" class="btn btn-secondary" style="text-align: center;">Limpar Filtro</a>
+            </div>
+        </form>
+        
+        <!-- BOTÕES DE EXPORTAÇÃO -->
+        <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+                <h3 style="font-size: 14px; font-weight: 600; color: #1e293b; margin: 0;">
+                    📥 Exportar Dados
+                </h3>
+                <span style="font-size: 12px; color: #64748b;">
+                    {{ movimentos|length }} movimento(s) encontrado(s)
+                </span>
+            </div>
+            
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 10px;">
+                <!-- Exportar Movimentos CSV -->
+                <button onclick="exportarMovimentos('csv')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📄</span>
+                    <span>Exportar CSV</span>
+                </button>
+                
+                <!-- Exportar Movimentos Excel -->
+                <button onclick="exportarMovimentos('excel')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📊</span>
+                    <span>Exportar Excel</span>
+                </button>
+                
+                <!-- Exportar Resumo Mensal -->
+                <button onclick="exportarResumo('excel')" class="btn" style="background: #667eea; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📈</span>
+                    <span>Resumo Mensal</span>
+                </button>
+                
+                <!-- Exportar Resumo CSV -->
+                <button onclick="exportarResumo('csv')" class="btn" style="background: #667eea; color: white; display: flex; align-items: center; justify-content: center; gap: 8px;">
+                    <span style="font-size: 18px;">📋</span>
+                    <span>Resumo CSV</span>
+                </button>
+            </div>
+            
+            <div class="alert alert-info" style="margin-top: 15px; padding: 12px;">
+                <strong>ℹ️ Sobre a Exportação:</strong>
+                <ul style="margin: 8px 0 0 20px; font-size: 13px;">
+                    <li><strong>CSV:</strong> Arquivo de texto com separação por ponto-e-vírgula (;) - ideal para Excel e outras planilhas</li>
+                    <li><strong>Excel:</strong> Arquivo .xlsx com formatação, cores e fórmulas - pronto para análise</li>
+                    <li><strong>Resumo Mensal:</strong> Consolidado por mês com receitas, despesas e resultado</li>
+                    <li>Os filtros de data aplicados acima serão respeitados na exportação</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <!-- TABELA DE MOVIMENTOS -->
+    <div class="card">
+        <div class="card-title">Movimentos Lançados</div>
+        
+        <div class="action-buttons" style="margin-bottom: 1rem;">
+            <a href="#" id="btn-editar" class="btn btn-secondary" disabled>Editar</a>
+            <button type="submit" form="form-excluir" id="btn-excluir" class="btn btn-danger" disabled>Excluir</button>
+        </div>
+        <form id="form-excluir" method="POST" action="#" onsubmit="return confirm('Tem certeza?');"></form>
+
+        <div class="table-container">
+            <table style="font-size: 0.9em;">
+                <thead>
+                    <tr>
+                        <th style="width: 5%;"></th>
+                        <th>Data Mov.</th>
+                        <th>Data Efet.</th>
+                        <th>Descrição</th>
+                        <th>Categoria</th>
+                        <th>Conta</th>
+                        <th>Cartão</th>
+                        <th style="text-align: right;">Valor</th>
+                        <th>Status</th>
+                        <th>Compartilhado</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for mov in movimentos %}
+                    <tr id="row-{{ mov.id }}">
+                        <td><input type="radio" name="selecionado" value="{{ mov.id }}" onchange="itemSelecionado(this, 'movimentos')"></td>
+                        <td>{{ mov.data_mov_formatada }}</td>
+                        <td>{{ mov.data_efet_formatada or '---' }}</td>
+                        <td>{{ mov.descricao }}</td>
+                        <td>{{ mov.categoria_nome }}</td>
+                        <td>{{ mov.instituicao_nome }}</td>
+                        <td>{{ mov.cartao_nome or '---' }}</td>
+                        <td style="text-align: right; color: {% if mov.categoria_tipo == 'Receita' %}green{% else %}red{% endif %}; font-weight: 600;">
+                            {{ format_brl(mov.valor|abs) }}
+                        </td>
+                        <td>
+                            {% if mov.status == 'Efetivado' %}
+                                <span class="badge badge-success">Efetivado</span>
+                            {% else %}
+                                <span class="badge badge-warning">Pendente</span>
+                            {% endif %}
+                        </td>
+                        <td>{{ mov.compartilhado }}</td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="10" style="text-align: center; padding: 40px; color: #64748b;">
+                        Nenhum movimento encontrado para o período.
+                    </td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script>
+        // Função para exportar movimentos
+        function exportarMovimentos(formato) {
+            const dataInicio = document.getElementById('filter_data_inicio').value;
+            const dataFim = document.getElementById('filter_data_fim').value;
+            
+            let url = `/movimentos/exportar?formato=${formato}`;
+            
+            if (dataInicio) {
+                url += `&data_inicio=${dataInicio}`;
+            }
+            
+            if (dataFim) {
+                url += `&data_fim=${dataFim}`;
+            }
+            
+            // Abre em nova aba para download
+            window.location.href = url;
+        }
+        
+        // Função para exportar resumo mensal
+        function exportarResumo(formato) {
+            const dataInicio = document.getElementById('filter_data_inicio').value;
+            const dataFim = document.getElementById('filter_data_fim').value;
+            
+            let url = `/movimentos/exportar-resumo?formato=${formato}`;
+            
+            if (dataInicio) {
+                url += `&data_inicio=${dataInicio}`;
+            }
+            
+            if (dataFim) {
+                url += `&data_fim=${dataFim}`;
+            }
+            
+            window.location.href = url;
+        }
+    </script>
 {% endblock %}

@@ -13,11 +13,13 @@
 
 <!-- FILTROS -->
 <div class="card">
+    <div class="card-title">Filtros de Pesquisa</div>
+    
     <form method="GET">
         <div class="form-grid cols-4">
             <div class="form-group" style="margin-bottom: 0;">
                 <label>Conta Bancária:*</label>
-                <select name="instituicao_id" required onchange="this.form.submit()">
+                <select name="instituicao_id" id="filter_instituicao_id" required onchange="this.form.submit()">
                     <option value="">-- Selecione uma conta --</option>
                     {% for inst in instituicoes %}
                     <option value="{{ inst.id }}" {% if inst.id == instituicao_id %}selected{% endif %}>
@@ -28,15 +30,55 @@
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>Data Início:</label>
-                <input type="date" name="data_inicio" value="{{ data_inicio or '' }}">
+                <input type="date" name="data_inicio" id="filter_data_inicio" value="{{ data_inicio or '' }}">
             </div>
             <div class="form-group" style="margin-bottom: 0;">
                 <label>Data Fim:</label>
-                <input type="date" name="data_fim" value="{{ data_fim or '' }}">
+                <input type="date" name="data_fim" id="filter_data_fim" value="{{ data_fim or '' }}">
             </div>
             <button type="submit" class="btn btn-primary" style="align-self: end;">Filtrar</button>
         </div>
     </form>
+    
+    <!-- BOTÕES DE EXPORTAÇÃO -->
+    {% if instituicao_selecionada %}
+    <div style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #e2e8f0;">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+            <h3 style="font-size: 14px; font-weight: 600; color: #1e293b; margin: 0;">
+                📥 Exportar Extrato
+            </h3>
+            <span style="font-size: 12px; color: #64748b;">
+                Conta: <strong>{{ instituicao_selecionada }}</strong> | 
+                {{ movimentacoes|length }} movimentação(ões)
+            </span>
+        </div>
+        
+        <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 10px;">
+            <!-- Exportar Excel -->
+            <button onclick="exportarExtrato('excel')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span style="font-size: 18px;">📊</span>
+                <span>Exportar Excel Formatado</span>
+            </button>
+            
+            <!-- Exportar CSV -->
+            <button onclick="exportarExtrato('csv')" class="btn btn-success" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+                <span style="font-size: 18px;">📄</span>
+                <span>Exportar CSV</span>
+            </button>
+        </div>
+        
+        <div class="alert alert-info" style="margin-top: 15px; padding: 12px;">
+            <strong>ℹ️ Sobre a Exportação do Extrato:</strong>
+            <ul style="margin: 8px 0 0 20px; font-size: 13px;">
+                <li><strong>Excel Formatado:</strong> Inclui cabeçalho com dados da conta, resumo financeiro (saldo inicial, entradas, saídas, saldo final) e tabela completa com cores por tipo de operação</li>
+                <li><strong>CSV:</strong> Formato texto com todos os dados do extrato - ideal para importar em outras ferramentas</li>
+                <li><strong>Saldo Inicial:</strong> Calculado automaticamente com base em todas as movimentações anteriores ao período selecionado</li>
+                <li><strong>Saldo Progressivo:</strong> Mostra o saldo após cada movimentação</li>
+                <li>Os filtros de data aplicados acima serão respeitados na exportação</li>
+            </ul>
+        </div>
+    </div>
+    {% endif %}
 </div>
 
 {% if instituicao_selecionada %}
@@ -188,6 +230,7 @@
         <li><strong>Transferências Enviadas:</strong> Dinheiro que SAIU desta conta para outra conta ou cartão</li>
         <li><strong>Saldo:</strong> Mostra o saldo acumulado após cada operação</li>
         <li><strong>Compartilhado:</strong> 👩 = 100% Silvia | 👨 = 100% Nelson | 👥 = 50/50</li>
+        <li><strong>Exportação:</strong> Use os botões acima para gerar arquivos Excel ou CSV do extrato completo</li>
     </ul>
 </div>
 
@@ -210,5 +253,33 @@
     </div>
 </div>
 {% endif %}
+
+<script>
+    // Função para exportar extrato
+    function exportarExtrato(formato) {
+        const instituicaoId = document.getElementById('filter_instituicao_id').value;
+        
+        if (!instituicaoId) {
+            alert('Por favor, selecione uma conta bancária primeiro.');
+            return;
+        }
+        
+        const dataInicio = document.getElementById('filter_data_inicio').value;
+        const dataFim = document.getElementById('filter_data_fim').value;
+        
+        let url = `/relatorio/extrato/exportar?formato=${formato}&instituicao_id=${instituicaoId}`;
+        
+        if (dataInicio) {
+            url += `&data_inicio=${dataInicio}`;
+        }
+        
+        if (dataFim) {
+            url += `&data_fim=${dataFim}`;
+        }
+        
+        // Abre em nova aba para download
+        window.location.href = url;
+    }
+</script>
 
 {% endblock %}
